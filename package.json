@@ -1,0 +1,14 @@
+{
+  "name": "can-message-viewer",
+  "version": "1.0.0",
+  "description": "Browser-based CAN / CAN FD message viewer (offline log analysis + live WebView2)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/run-node.mjs",
+    "build:singlefile": "node tools/make-singlefile.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

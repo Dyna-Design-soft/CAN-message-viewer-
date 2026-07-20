@@ -49,6 +49,11 @@ export async function loadLogFile(file, onProgress) {
  * falling back to main-thread parsing if workers are unavailable.
  */
 export async function loadLogFileInWorker(file) {
+  // The single-file build has no separate worker script to load; parse on the
+  // main thread instead. esbuild's --define folds this to a constant so the
+  // Worker/URL reference below becomes dead code (no second chunk is emitted).
+  const SINGLEFILE = typeof __SINGLEFILE__ !== 'undefined' && __SINGLEFILE__;
+  if (SINGLEFILE) return loadLogFile(file);
   const { FrameStore } = await import('../core/frame-store.js');
   if (typeof Worker === 'undefined') return loadLogFile(file);
   return new Promise((resolve, reject) => {

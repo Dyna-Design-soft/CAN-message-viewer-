@@ -4,3 +4,6 @@ node_modules/
 
 # large generated perf fixture (regenerate locally)
 test/fixtures/large.asc
+
+# npm (esbuild is a dev-only build dep)
+package-lock.json
