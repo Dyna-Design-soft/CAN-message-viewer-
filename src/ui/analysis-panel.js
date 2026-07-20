@@ -42,8 +42,15 @@ export function initAnalysisPanel(app) {
           msgHasMatch = true;
           const leaf = document.createElement('label');
           leaf.className = 'tree-leaf';
+          leaf.draggable = true;
+          leaf.title = 'Drag onto a graph track, or tick to plot';
+          leaf.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', q);
+            e.dataTransfer.effectAllowed = 'copyMove';
+          });
           const cb = document.createElement('input');
           cb.type = 'checkbox';
+          cb.dataset.q = q;
           cb.checked = app.selection.has(q);
           cb.addEventListener('change', () => {
             if (cb.checked) app.selection.add(q);
@@ -86,6 +93,16 @@ export function initAnalysisPanel(app) {
     renderTree();
     onSelectionChanged();
   };
+
+  // A drag-drop onto a track (from graph-manager) changes the selection without
+  // going through a checkbox — sync the tree checkboxes and the value table.
+  app.bus.on('selection:changed', ({ signals }) => {
+    const set = new Set(signals);
+    for (const cb of treeEl.querySelectorAll('.tree-leaf input')) {
+      cb.checked = set.has(cb.dataset.q);
+    }
+    renderTable();
+  });
 
   // ---- value table (follows playback time) ----
   function renderTable() {
@@ -174,6 +191,10 @@ export function initAnalysisPanel(app) {
   }
   modeSplit.addEventListener('click', () => setMode('split'));
   modeOverlay.addEventListener('click', () => setMode('overlay'));
+  app.bus.on('graph:mode', ({ mode }) => {
+    modeSplit.classList.toggle('is-active', mode === 'split');
+    modeOverlay.classList.toggle('is-active', mode === 'overlay');
+  });
   document.getElementById('graph-add-xy').addEventListener('click', () => {
     graphs.addXY();
     requestAnimationFrame(() => graphs.resizeAll());

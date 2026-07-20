@@ -341,19 +341,36 @@ label { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .track-legend {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: 3px 10px;
+  flex-wrap: wrap;
+  gap: 3px 16px;
+  padding: 4px 10px;
   font-size: 11.5px;
   font-family: var(--mono);
   background: linear-gradient(180deg, #171b24, #12161b);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
-.track-legend .dot { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
-.track-legend .track-name { color: var(--text); }
-.track-legend .track-unit { color: var(--text-muted); }
-.track-legend .track-value { margin-left: auto; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.track-entry { display: inline-flex; align-items: center; gap: 5px; }
+.track-entry .dot { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
+.track-entry .track-name { color: var(--text); }
+.track-entry .track-unit { color: var(--text-muted); }
+.track-entry .track-value { color: var(--text); font-weight: 600; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .track-plot { flex: 1; min-height: 0; }
+
+/* drag & drop of signals onto tracks */
+.split-pane.drop-hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.track-dropzone {
+  margin: var(--sp-1) var(--sp-2) var(--sp-2);
+  padding: var(--sp-3);
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.track-dropzone.drop-hover { border-color: var(--accent); color: var(--accent); background: rgba(77, 163, 255, 0.06); }
+.tree-leaf { cursor: grab; }
+.tree-leaf:active { cursor: grabbing; }
 
 .graph-time {
   font-family: var(--mono);

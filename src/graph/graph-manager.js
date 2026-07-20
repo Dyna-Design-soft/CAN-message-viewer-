@@ -43,6 +43,8 @@ export class GraphManager {
     this.syncKey = uPlot.sync('graphstack-' + storeTag);
     this.#syncingScale = false;
     this.hoverTime = null;
+    this.splitTracks = []; // Array<qname[]> — user-arrangeable tracks (drag & drop)
+    this._colors = new Map(); // stable color per qualified signal name
     this.cursors.onChange(() => { this.#renderReadout(); this.#updateLegends(); });
     this.readoutEl = storeTag === 'live' ? null : document.getElementById('cursor-readout');
     this.timeEl = storeTag === 'live' ? null : document.getElementById('graph-time');
@@ -56,6 +58,51 @@ export class GraphManager {
 
   #series(qname) {
     return this.app.seriesCache.get(qname, this.storeTag);
+  }
+
+  /** Stable color for a signal (kept consistent across tracks, overlay, legend). */
+  colorFor(qname) {
+    if (!this._colors.has(qname)) {
+      this._colors.set(qname, SERIES_COLORS[this._colors.size % SERIES_COLORS.length]);
+    }
+    return this._colors.get(qname);
+  }
+
+  /** Reconcile the track layout with the current selection. */
+  #syncTracksToSelection() {
+    const sel = new Set(this.selection);
+    for (const track of this.splitTracks) {
+      for (let i = track.length - 1; i >= 0; i--) if (!sel.has(track[i])) track.splice(i, 1);
+    }
+    this.splitTracks = this.splitTracks.filter((t) => t.length);
+    const present = new Set(this.splitTracks.flat());
+    for (const q of this.selection) if (!present.has(q)) this.splitTracks.push([q]);
+  }
+
+  /**
+   * Drop a signal onto a track (drag & drop from the signal list).
+   * targetIndex null → new track; otherwise add to that existing track (moved
+   * out of any other track it was in).
+   */
+  dropSignal(qname, targetIndex) {
+    if (!this.app.dbc.signalByQualifiedName(qname)) return;
+    this.app.selection.add(qname);
+    for (const t of this.splitTracks) {
+      const i = t.indexOf(qname);
+      if (i >= 0) t.splice(i, 1);
+    }
+    this.splitTracks = this.splitTracks.filter((t) => t.length);
+    if (targetIndex == null || targetIndex < 0 || targetIndex >= this.splitTracks.length) {
+      this.splitTracks.push([qname]);
+    } else if (!this.splitTracks[targetIndex].includes(qname)) {
+      this.splitTracks[targetIndex].push(qname);
+    }
+    this.primaryMode = 'split';
+    this.app.bus.emit('graph:mode', { mode: 'split' });
+    this.#syncPrimary();
+    requestAnimationFrame(() => this.resizeAll());
+    // let the tree checkboxes / value table reflect the new selection
+    this.app.bus.emit('selection:changed', { signals: [...this.app.selection] });
   }
 
   * #allUplots() {
@@ -152,10 +199,12 @@ export class GraphManager {
     for (const g of this.graphs) {
       if (!g.panes) continue;
       for (const p of g.panes) {
-        let v;
-        if (rt != null) v = valueAt(p.series, rt);
-        else v = p.series.v.length ? p.series.v[p.series.v.length - 1] : null;
-        p.valueEl.textContent = v == null ? '—' : fmtVal(v);
+        for (const ent of p.entries) {
+          let v;
+          if (rt != null) v = valueAt(ent.series, rt);
+          else v = ent.series.v.length ? ent.series.v[ent.series.v.length - 1] : null;
+          ent.valueEl.textContent = v == null ? '—' : fmtVal(v);
+        }
       }
     }
     if (this.timeEl) {
@@ -292,28 +341,68 @@ export class GraphManager {
     g.uplots = [];
     g.panes = [];
     g.paneHeights = g.paneHeights || {};
-    const sigs = this.selection.map((q) => ({ q, series: this.#series(q) })).filter((s) => s.series && s.series.t.length);
-    g.titleEl.textContent = `Split view · ${sigs.length} signal${sigs.length === 1 ? '' : 's'}`;
-    if (sigs.length === 0) {
-      empty(g.body, 'Selected signals have no samples in this log.');
+    this.#syncTracksToSelection();
+    // keep only tracks that have at least one signal with samples
+    const tracks = this.splitTracks
+      .map((track) => track.map((q) => ({ q, series: this.#series(q) })).filter((s) => s.series && s.series.t.length))
+      .filter((t) => t.length);
+    g.titleEl.textContent = `Split view · ${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    if (tracks.length === 0) {
+      empty(g.body, 'Tick or drag signals here to plot them.');
+      this.#appendDropZone(g);
       return;
     }
-    sigs.forEach((s, i) => {
-      const isLast = i === sigs.length - 1;
-      const color = SERIES_COLORS[i % SERIES_COLORS.length];
-      const unit = s.series.signal.unit || '';
 
+    tracks.forEach((sigs, ti) => {
+      const isLast = ti === tracks.length - 1;
       const pane = document.createElement('div');
       pane.className = 'split-pane';
-      pane.style.height = (g.paneHeights[s.q] ?? 160) + 'px';
+      pane.style.height = (g.paneHeights[ti] ?? 160) + 'px';
+
       const legend = document.createElement('div');
       legend.className = 'track-legend';
-      const dot = spanEl('dot'); dot.style.background = color;
-      const name = spanEl('track-name'); name.textContent = shortName(s.q);
-      const unitEl = spanEl('track-unit'); unitEl.textContent = unit ? ` ${unit}` : '';
-      const valueEl = spanEl('track-value'); valueEl.textContent = '—';
-      legend.append(dot, name, unitEl, valueEl);
-      const plotEl = document.createElement('div'); plotEl.className = 'track-plot';
+      const plotEl = document.createElement('div');
+      plotEl.className = 'track-plot';
+
+      // aligned multi-series data + Y axes grouped by unit
+      const { xs, cols } = buildAligned(sigs.map((s) => s.series));
+      const unitScales = new Map();
+      const series = [{}];
+      const axes = [this.#baseOpts(0, isLast).axes[0]];
+      let axisSide = 0;
+      const entries = [];
+      sigs.forEach((s) => {
+        const color = this.colorFor(s.q);
+        const unit = s.series.signal.unit || '';
+        const ent = document.createElement('span');
+        ent.className = 'track-entry';
+        const dot = spanEl('dot'); dot.style.background = color;
+        const name = spanEl('track-name'); name.textContent = shortName(s.q);
+        const unitEl = spanEl('track-unit'); unitEl.textContent = unit ? ` ${unit}` : '';
+        const valueEl = spanEl('track-value'); valueEl.textContent = '—';
+        ent.append(dot, name, unitEl, valueEl);
+        legend.appendChild(ent);
+        entries.push({ series: s.series, valueEl });
+
+        let scaleKey = unitScales.get(unit);
+        if (!scaleKey) {
+          scaleKey = 'y' + unitScales.size;
+          unitScales.set(unit, scaleKey);
+          axes.push({
+            scale: scaleKey, stroke: AXIS_STROKE,
+            grid: { show: unitScales.size === 1, stroke: GRID_STROKE, width: 1 },
+            ticks: { stroke: TICK_STROKE }, side: axisSide % 2 === 0 ? 3 : 1,
+            size: Y_AXIS_SIZE, font: '11px ' + MONO,
+          });
+          axisSide++;
+        }
+        series.push({
+          label: shortName(s.q), stroke: color, width: 1.6, scale: scaleKey,
+          spanGaps: false, paths: stepped, points: { show: false },
+          value: (u, v) => (v == null ? '—' : fmtVal(v)),
+        });
+      });
+
       pane.append(legend, plotEl);
       g.body.appendChild(pane);
 
@@ -321,28 +410,50 @@ export class GraphManager {
         ...this.#baseOpts(0, isLast),
         width: plotEl.clientWidth || 600,
         height: plotEl.clientHeight || 120,
-        axes: [
-          this.#baseOpts(0, isLast).axes[0],
-          { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE, width: 1 }, ticks: { stroke: TICK_STROKE }, size: Y_AXIS_SIZE, font: '11px ' + MONO },
-        ],
-        series: [
-          {},
-          { stroke: color, width: 1.6, spanGaps: false, paths: stepped, points: { show: false }, value: (u, v) => (v == null ? '—' : fmtVal(v)) },
-        ],
+        axes,
+        series,
       };
-      const u = new uPlot(opts, [s.series.t, s.series.v], plotEl);
+      const u = new uPlot(opts, [xs, ...cols], plotEl);
       this.syncKey.sub(u);
       g.uplots.push(u);
-      g.panes.push({ series: s.series, valueEl, plotEl, uplot: u });
+      g.panes.push({ entries, plotEl, uplot: u });
 
-      // drag handle to resize this track's height
-      const rez = makeVResizer(() => pane, (h) => {
-        g.paneHeights[s.q] = h;
+      this.#makeTrackDropTarget(pane, ti);
+      const rez = makeVResizer(() => pane, () => {
+        g.paneHeights[ti] = pane.getBoundingClientRect().height;
         u.setSize({ width: plotEl.clientWidth, height: plotEl.clientHeight });
       });
       g.body.appendChild(rez);
     });
+
+    this.#appendDropZone(g);
     this.#updateLegends();
+  }
+
+  #makeTrackDropTarget(pane, index) {
+    pane.addEventListener('dragover', (e) => { e.preventDefault(); pane.classList.add('drop-hover'); });
+    pane.addEventListener('dragleave', () => pane.classList.remove('drop-hover'));
+    pane.addEventListener('drop', (e) => {
+      e.preventDefault();
+      pane.classList.remove('drop-hover');
+      const q = e.dataTransfer.getData('text/plain');
+      if (q) this.dropSignal(q, index);
+    });
+  }
+
+  #appendDropZone(g) {
+    const dz = document.createElement('div');
+    dz.className = 'track-dropzone';
+    dz.textContent = 'Drag a signal here to add a new track';
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drop-hover'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drop-hover'));
+    dz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dz.classList.remove('drop-hover');
+      const q = e.dataTransfer.getData('text/plain');
+      if (q) this.dropSignal(q, null);
+    });
+    g.body.appendChild(dz);
   }
 
   // ---- OVERLAY: all signals on one plot, Y axes grouped by unit ----
@@ -383,7 +494,7 @@ export class GraphManager {
       }
       series.push({
         label: shortName(s.q),
-        stroke: SERIES_COLORS[i % SERIES_COLORS.length],
+        stroke: this.colorFor(s.q),
         dash: DASHES[i % DASHES.length] || undefined,
         width: 1.5,
         scale: scaleKey,
@@ -499,7 +610,7 @@ export class GraphManager {
     if (!this.container.querySelector('.placeholder')) {
       const p = document.createElement('p');
       p.className = 'placeholder';
-      p.textContent = 'Tick signals on the left — each appears as its own aligned graph.';
+      p.textContent = 'Tick a signal, or drag one from the list onto a track.';
       this.container.appendChild(p);
     }
   }
