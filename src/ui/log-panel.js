@@ -44,19 +44,25 @@ export function initLogPanel(app) {
     setBusy(`Loading ${file.name}…`);
     try {
       const { store, format } = await loadLogFileInWorker(file);
-      const stats = store.computeStats();
-      app.logStore = store;
-      app.logStats = stats;
-      app.logFileName = file.name;
-      app.logFormat = format;
-      render(file.name, format, stats);
-      app.bus.emit('log:loaded', { store, stats, fileName: file.name, format });
+      adopt(store, file.name, format);
     } catch (err) {
       console.error(err);
       setBusy(null);
       alert(`Could not load "${file.name}":\n${err.message}`);
     }
   }
+
+  // Adopt an already-built FrameStore (used by openFile and by demo auto-load).
+  function adopt(store, fileName, format) {
+    const stats = store.computeStats();
+    app.logStore = store;
+    app.logStats = stats;
+    app.logFileName = fileName;
+    app.logFormat = format;
+    render(fileName, format, stats);
+    app.bus.emit('log:loaded', { store, stats, fileName, format });
+  }
+  app.adoptLog = adopt;
 
   function clear() {
     app.logStore.clear();

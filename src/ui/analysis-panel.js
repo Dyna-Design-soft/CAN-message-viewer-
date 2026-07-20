@@ -79,6 +79,14 @@ export function initAnalysisPanel(app) {
     renderTable();
   }
 
+  // Programmatically set the checked signals (used by demo auto-load).
+  app.applySelection = (qnames) => {
+    app.selection.clear();
+    for (const q of qnames) app.selection.add(q);
+    renderTree();
+    onSelectionChanged();
+  };
+
   // ---- value table (follows playback time) ----
   function renderTable() {
     const t = playback.time;

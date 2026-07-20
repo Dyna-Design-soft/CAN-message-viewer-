@@ -9,6 +9,7 @@ import { initDbcModal } from './ui/dbc-modal.js';
 import { initLogPanel } from './ui/log-panel.js';
 import { initAnalysisPanel } from './ui/analysis-panel.js';
 import { initLivePanel } from './ui/live-panel.js';
+import { loadDemo } from './demo.js';
 
 const app = {
   bus,
@@ -36,6 +37,7 @@ function selectPanel(panelId) {
 for (const tab of tabs) {
   tab.addEventListener('click', () => selectPanel(tab.dataset.panel));
 }
+app.selectPanel = selectPanel;
 
 // ---- status bar ----
 bus.on('dbc:changed', () => {
@@ -63,3 +65,8 @@ initAnalysisPanel(app);
 initLivePanel(app);
 
 window.__canApp = app; // debugging hook
+
+// First-run demo: auto-load sample DBC + log so graphs are visible immediately.
+if (app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
+  loadDemo(app);
+}
