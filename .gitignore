@@ -1,3 +1,6 @@
 node_modules/
 *.log
 .DS_Store
+
+# large generated perf fixture (regenerate locally)
+test/fixtures/large.asc
