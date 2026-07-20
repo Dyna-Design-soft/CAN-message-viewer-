@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CAN Viewer — Tests</title>
+<style>
+  body { font-family: "Segoe UI", system-ui, sans-serif; background: #16191d; color: #d8dde2; padding: 20px; }
+  h1 { font-size: 18px; }
+  .summary { font-size: 15px; margin: 12px 0; padding: 8px 12px; border-radius: 6px; display: inline-block; }
+  .summary.pass { background: #163d2b; color: #7be0a8; }
+  .summary.fail { background: #3d1616; color: #ff9090; }
+  ul { list-style: none; padding: 0; font-family: "Cascadia Code", monospace; font-size: 13px; }
+  li { padding: 3px 0; }
+  .ok::before { content: "✓ "; color: #4caf82; }
+  .no::before { content: "✕ "; color: #e06060; }
+  .no { color: #ff9090; }
+  pre { color: #e0a83c; margin: 2px 0 6px 20px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>CAN Message Viewer — Test Suite</h1>
+<div id="summary" class="summary">Running…</div>
+<ul id="results"></ul>
+
+<script type="module">
+  import './decoder.test.js';
+  import './dbc-parser.test.js';
+  import './asc-reader.test.js';
+  import { runAll, summarize } from './test-runner.js';
+
+  const results = await runAll();
+  const ul = document.getElementById('results');
+  for (const r of results) {
+    const li = document.createElement('li');
+    li.className = r.ok ? 'ok' : 'no';
+    li.textContent = r.name;
+    ul.appendChild(li);
+    if (!r.ok) {
+      const pre = document.createElement('pre');
+      pre.textContent = r.error;
+      ul.appendChild(pre);
+    }
+  }
+  const s = summarize(results);
+  const box = document.getElementById('summary');
+  box.className = 'summary ' + (s.failed ? 'fail' : 'pass');
+  box.textContent = `${s.passed}/${s.total} passed, ${s.failed} failed`;
+  window.__testSummary = s;
+</script>
+</body>
+</html>

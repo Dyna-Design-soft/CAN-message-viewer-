@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAN Message Viewer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%234da3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h3l2-7 4 14 3-10 2 3h4'/></svg>">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="src/graph/uplot.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-title">
+    <svg class="app-logo" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path fill="currentColor" d="M3 12h3l2-7 4 14 3-10 2 3h4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    CAN Message Viewer
+  </div>
+
+  <nav class="tab-bar" role="tablist">
+    <button class="tab active" data-panel="panel-log" role="tab">Log File</button>
+    <button class="tab" data-panel="panel-analysis" role="tab">Analysis</button>
+    <button class="tab" data-panel="panel-live" role="tab">Live</button>
+  </nav>
+
+  <div class="header-actions">
+    <button id="btn-dbc" class="btn btn-accent" title="Manage DBC databases">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 1.1 6 1.5S15.9 8 12 8 6 6.9 6 6.5 8.1 5 12 5zm6 13c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.9c1.5.8 3.7 1.2 6 1.2s4.5-.4 6-1.2V18zm0-5.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5V9.6C7.5 10.4 9.7 10.8 12 10.8s4.5-.4 6-1.2v2.9z"/></svg>
+      DBC <span id="dbc-count" class="badge" hidden>0</span>
+    </button>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- ======================= LOG FILE PANEL ======================= -->
+  <section id="panel-log" class="panel active">
+    <div class="log-layout">
+      <div id="log-drop" class="drop-zone">
+        <input type="file" id="log-file-input" accept=".asc,.blf,.tdms,.log,.txt,.csv,.trc" hidden multiple>
+        <div class="drop-inner">
+          <svg viewBox="0 0 24 24" width="42" height="42" aria-hidden="true"><path fill="currentColor" d="M19 13v6H5v-6H3v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6h-2zm-6-8.6 3.3 3.3 1.4-1.4L12 .6 6.3 6.3l1.4 1.4L11 4.4V16h2V4.4z" transform="rotate(180 12 10)"/></svg>
+          <p><strong>Open a CAN log file</strong></p>
+          <p class="muted">Drop a file here or <button class="linklike" id="log-browse">browse…</button></p>
+          <p class="muted small">Supported: Vector ASC, Vector BLF, NI TDMS (XNET), CSV/LOG</p>
+        </div>
+      </div>
+
+      <div id="log-summary" class="log-summary" hidden>
+        <div class="summary-head">
+          <h2 id="log-file-name">—</h2>
+          <div>
+            <button id="log-open-another" class="btn">Open another…</button>
+            <button id="log-clear" class="btn">Close file</button>
+          </div>
+        </div>
+        <div id="log-stats-cards" class="stat-cards"></div>
+        <h3>Frames per identifier</h3>
+        <div class="table-scroll">
+          <table class="data-table" id="log-perid-table">
+            <thead>
+              <tr><th>Ch</th><th>ID</th><th>Type</th><th>Name</th><th>Count</th><th>Cycle time</th><th>Rate</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= ANALYSIS PANEL ======================= -->
+  <section id="panel-analysis" class="panel">
+    <div class="analysis-layout">
+      <aside class="signal-panel">
+        <div class="signal-panel-head">
+          <input type="search" id="signal-filter" placeholder="Filter signals…">
+        </div>
+        <div id="signal-tree" class="signal-tree">
+          <p class="placeholder">Load a DBC file and a log file to list signals.</p>
+        </div>
+      </aside>
+
+      <div class="analysis-main">
+        <div class="playback-bar">
+          <button id="pb-play" class="btn icon-btn" title="Play / pause">▶</button>
+          <button id="pb-stop" class="btn icon-btn" title="Stop (back to start)">⏹</button>
+          <input type="range" id="pb-slider" min="0" max="1000" value="0" step="1">
+          <span id="pb-time" class="mono">0.000 s</span>
+          <select id="pb-speed" title="Playback speed">
+            <option value="0.1">0.1×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="10">10×</option>
+          </select>
+        </div>
+
+        <div class="analysis-split">
+          <div class="analysis-table-area">
+            <div class="area-toolbar">
+              <strong>Signal values</strong>
+              <label class="toolbar-field">Update interval
+                <select id="table-interval">
+                  <option value="50">50 ms</option>
+                  <option value="100" selected>100 ms</option>
+                  <option value="250">250 ms</option>
+                  <option value="500">500 ms</option>
+                  <option value="1000">1 s</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="signal-value-table">
+                <thead><tr><th>Signal</th><th>Value</th><th>Unit</th><th>Raw</th><th>Message</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="analysis-graph-area">
+            <div class="area-toolbar">
+              <strong>Graphs</strong>
+              <div class="toolbar-group">
+                <button id="graph-add-trend" class="btn">+ Trend graph</button>
+                <button id="graph-add-xy" class="btn">+ XY graph</button>
+                <button id="cursor-add" class="btn">+ Cursor</button>
+                <button id="cursor-clear" class="btn" title="Remove all cursors">Clear cursors</button>
+              </div>
+            </div>
+            <div id="cursor-readout" class="cursor-readout" hidden></div>
+            <div id="graph-stack" class="graph-stack">
+              <p class="placeholder">Add a graph, then tick signals on the left.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= LIVE PANEL ======================= -->
+  <section id="panel-live" class="panel">
+    <div class="live-layout">
+      <div class="live-toolbar">
+        <label class="toolbar-field">Source
+          <select id="live-source">
+            <option value="webview2">Host application (WebView2)</option>
+            <option value="sim">Simulated bus</option>
+          </select>
+        </label>
+        <button id="live-start" class="btn btn-accent">Start</button>
+        <button id="live-stop" class="btn" disabled>Stop</button>
+        <span class="toolbar-sep"></span>
+        <button id="rec-toggle" class="btn btn-rec" disabled>● Record</button>
+        <span id="rec-status" class="muted"></span>
+        <span class="toolbar-spacer"></span>
+        <span id="live-status" class="live-status">idle</span>
+      </div>
+
+      <nav class="subtab-bar">
+        <button class="subtab active" data-view="live-grid">Frame grid</button>
+        <button class="subtab" data-view="live-signals">Signals</button>
+        <button class="subtab" data-view="live-trend">Trend</button>
+        <button class="subtab" data-view="live-trace">Trace</button>
+      </nav>
+
+      <div id="live-grid" class="live-view active">
+        <div class="table-scroll">
+          <table class="data-table mono" id="live-grid-table">
+            <thead><tr><th>Ch</th><th>ID</th><th>Type</th><th>Name</th><th>DLC</th><th>Data</th><th>Cycle</th><th>Count</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="live-signals" class="live-view">
+        <div class="table-scroll">
+          <table class="data-table" id="live-signal-table">
+            <thead><tr><th>Signal</th><th>Value</th><th>Unit</th><th>Raw</th><th>Message</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="placeholder" id="live-signals-hint">Tick signals in the Analysis tab signal list — the same selection is shown here live.</p>
+      </div>
+
+      <div id="live-trend" class="live-view">
+        <div class="area-toolbar">
+          <label class="toolbar-field">Window
+            <select id="live-trend-window">
+              <option value="10">10 s</option>
+              <option value="30" selected>30 s</option>
+              <option value="60">60 s</option>
+              <option value="300">5 min</option>
+            </select>
+          </label>
+        </div>
+        <div id="live-trend-plot" class="graph-stack"></div>
+      </div>
+
+      <div id="live-trace" class="live-view">
+        <div class="area-toolbar">
+          <label><input type="checkbox" id="trace-autoscroll" checked> Auto-scroll</label>
+          <button id="trace-clear" class="btn">Clear</button>
+        </div>
+        <div id="trace-list" class="trace-list mono"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="status-bar">
+  <span id="sb-dbc">DBC: none</span>
+  <span id="sb-log">Log: none</span>
+  <span id="sb-live">Live: idle</span>
+  <span class="toolbar-spacer"></span>
+  <span id="sb-frames"></span>
+</footer>
+
+<!-- ======================= DBC MODAL ======================= -->
+<div id="dbc-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dbc-modal-title">
+    <div class="modal-head">
+      <h2 id="dbc-modal-title">DBC databases</h2>
+      <button class="btn icon-btn" id="dbc-modal-close" title="Close">✕</button>
+    </div>
+    <div class="modal-toolbar">
+      <input type="file" id="dbc-file-input" accept=".dbc" multiple hidden>
+      <button id="dbc-load" class="btn btn-accent">Load DBC file(s)…</button>
+      <span class="muted">One or more .dbc files; each file becomes a cluster.</span>
+    </div>
+    <div id="dbc-tree" class="dbc-tree">
+      <p class="placeholder">No DBC files loaded yet.</p>
+    </div>
+  </div>
+</div>
+
+<script src="src/graph/uplot.min.js"></script>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

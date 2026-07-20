@@ -1,0 +1,64 @@
+// Application bootstrap: shared state, tab switching, panel wiring.
+
+import { bus } from './core/events.js';
+import { FrameStore } from './core/frame-store.js';
+import { DbcRegistry } from './core/dbc-model.js';
+import { ChannelMap } from './core/channel-map.js';
+import { SeriesCache } from './core/signal-series.js';
+import { initDbcModal } from './ui/dbc-modal.js';
+import { initLogPanel } from './ui/log-panel.js';
+import { initAnalysisPanel } from './ui/analysis-panel.js';
+import { initLivePanel } from './ui/live-panel.js';
+
+const app = {
+  bus,
+  dbc: new DbcRegistry(),
+  channelMap: null, // set below (needs dbc)
+  logStore: new FrameStore(), // offline: currently loaded file
+  liveStore: new FrameStore(), // online: ring-buffered live capture
+  logStats: null,
+  logFileName: null,
+  seriesCache: null, // set below
+  selection: new Set(), // checked signal qualified names
+};
+app.channelMap = new ChannelMap(app.dbc);
+app.seriesCache = new SeriesCache(app);
+
+// ---- tab switching ----
+const tabs = document.querySelectorAll('.tab-bar .tab');
+for (const tab of tabs) {
+  tab.addEventListener('click', () => {
+    for (const t of tabs) t.classList.toggle('active', t === tab);
+    for (const p of document.querySelectorAll('.panel')) {
+      p.classList.toggle('active', p.id === tab.dataset.panel);
+    }
+    bus.emit('tab:changed', { panel: tab.dataset.panel });
+  });
+}
+
+// ---- status bar ----
+bus.on('dbc:changed', () => {
+  const n = app.dbc.clusters.length;
+  document.getElementById('sb-dbc').textContent =
+    n === 0 ? 'DBC: none' : `DBC: ${app.dbc.clusters.map((c) => c.name).join(', ')}`;
+  const badge = document.getElementById('dbc-count');
+  badge.hidden = n === 0;
+  badge.textContent = n;
+});
+bus.on('log:loaded', ({ fileName, stats }) => {
+  document.getElementById('sb-log').textContent =
+    `Log: ${fileName} (${stats.frameCount.toLocaleString()} frames)`;
+});
+bus.on('log:cleared', () => {
+  document.getElementById('sb-log').textContent = 'Log: none';
+});
+bus.on('live:state', ({ state }) => {
+  document.getElementById('sb-live').textContent = `Live: ${state}`;
+});
+
+initDbcModal(app);
+initLogPanel(app);
+initAnalysisPanel(app);
+initLivePanel(app);
+
+window.__canApp = app; // debugging hook

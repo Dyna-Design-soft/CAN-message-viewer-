@@ -1,0 +1,40 @@
+VERSION "demo 1.0"
+
+NS_ :
+	BA_
+	BA_DEF_
+	BA_DEF_DEF_
+	CM_
+	VAL_
+
+BS_:
+
+BU_ ECU1 Gateway
+
+BO_ 256 EngineData: 8 ECU1
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" Gateway
+ SG_ VehicleSpeed : 16|16@1+ (0.01,0) [0|655.35] "km/h" Gateway
+ SG_ EngineTemp : 32|8@1+ (1,-40) [-40|215] "degC" Gateway
+ SG_ ThrottlePos : 40|8@1+ (1,0) [0|100] "%" Gateway
+
+BO_ 512 SensorArray: 64 ECU1
+ SG_ FrameCounter : 0|16@1+ (1,0) [0|65535] "" Gateway
+ SG_ MotorolaDemo : 23|16@0+ (1,0) [0|65535] "" Gateway
+
+BO_ 2633957614 CounterMsg: 8 ECU1
+ SG_ FreeCounter : 0|32@1+ (1,0) [0|4294967295] "" Gateway
+
+BO_ 768 Climate: 4 ECU1
+ SG_ TempSelect M : 0|8@1+ (1,0) [0|1] "" Gateway
+ SG_ CabinTemp m0 : 8|16@1+ (0.1,-40) [-40|80] "degC" Gateway
+ SG_ AmbientTemp m1 : 8|16@1+ (0.1,-40) [-40|80] "degC" Gateway
+
+CM_ BO_ 256 "Engine status frame";
+CM_ SG_ 256 EngineSpeed "Engine speed
+measured at the crankshaft";
+
+BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000;
+BA_DEF_DEF_ "GenSigStartValue" 0;
+BA_ "GenSigStartValue" SG_ 256 EngineSpeed 3200;
+
+VAL_ 768 TempSelect 0 "Cabin" 1 "Ambient" ;
