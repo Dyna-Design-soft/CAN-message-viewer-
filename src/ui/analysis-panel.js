@@ -199,11 +199,19 @@ export function initAnalysisPanel(app) {
     graphs.addXY();
     requestAnimationFrame(() => graphs.resizeAll());
   });
-  document.getElementById('cursor-add').addEventListener('click', () => {
-    graphs.cursors.add(playback.time || (playback.tMin + playback.range / 2));
-  });
+  document.getElementById('cursor-add').addEventListener('click', () => graphs.addCursor());
   document.getElementById('cursor-clear').addEventListener('click', () => graphs.cursors.clear());
   document.getElementById('graph-reset').addEventListener('click', () => graphs.resetZoom());
+
+  // Arrow keys nudge the active cursor (Shift = coarse). Ignored while typing.
+  document.addEventListener('keydown', (e) => {
+    const analysisActive = document.getElementById('panel-analysis').classList.contains('active');
+    if (!analysisActive || !graphs.cursors.times.length) return;
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+    if (e.key === 'ArrowLeft') { graphs.nudgeActiveCursor(-1, e.shiftKey); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { graphs.nudgeActiveCursor(1, e.shiftKey); e.preventDefault(); }
+  });
 
   // ---- mobile: signal drawer + Table/Graphs segmented control ----
   const layout = document.querySelector('.analysis-layout');

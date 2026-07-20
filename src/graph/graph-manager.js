@@ -166,6 +166,39 @@ export class GraphManager {
     this.#updateLegends();
   }
 
+  #firstTimeUplot() {
+    for (const g of this.graphs) {
+      if (g.role === 'xy') continue;
+      if (g.panes && g.panes.length) return g.panes[0].uplot;
+      if (g.uplot) return g.uplot;
+    }
+    return null;
+  }
+
+  /** Add a cursor, spread across the current view so cursors never stack. */
+  addCursor() {
+    const u = this.#firstTimeUplot();
+    let t = 0;
+    if (u) {
+      const { min, max } = u.scales.x;
+      const fracs = [1 / 3, 2 / 3, 1 / 2, 1 / 2];
+      t = min + (max - min) * (fracs[this.cursors.times.length] ?? 0.5);
+    }
+    this.cursors.add(t);
+  }
+
+  /** Nudge the active cursor left/right (dir -1/+1); big = coarse step. */
+  nudgeActiveCursor(dir, big) {
+    const u = this.#firstTimeUplot();
+    if (!u) return;
+    const i = this.cursors.active;
+    if (i >= this.cursors.times.length) return;
+    const { min, max } = u.scales.x;
+    const step = ((max - min) / (big ? 40 : 400)) * dir;
+    const t = Math.max(min, Math.min(max, this.cursors.times[i] + step));
+    this.cursors.move(i, t);
+  }
+
   resizeAll() {
     for (const g of this.graphs) {
       if (g.panes) {
