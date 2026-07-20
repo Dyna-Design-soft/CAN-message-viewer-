@@ -13,3 +13,15 @@ export async function loadFixture(name) {
   if (!res.ok) throw new Error(`fixture ${name}: ${res.status}`);
   return res.text();
 }
+
+export async function loadFixtureBytes(name) {
+  if (isNode) {
+    const { readFile } = await import('node:fs/promises');
+    const { fileURLToPath } = await import('node:url');
+    const dir = fileURLToPath(new URL('./fixtures/', import.meta.url));
+    return new Uint8Array(await readFile(dir + name));
+  }
+  const res = await fetch(new URL(`./fixtures/${name}`, import.meta.url));
+  if (!res.ok) throw new Error(`fixture ${name}: ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}

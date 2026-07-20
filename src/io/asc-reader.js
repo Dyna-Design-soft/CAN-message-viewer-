@@ -58,17 +58,28 @@ export function parseAscText(text) {
       let flags = FrameFlags.FD | (dir === 'Tx' ? FrameFlags.TX : 0);
       if (tok.includes('BRS')) flags |= FrameFlags.BRS;
       if (tok.includes('ESI')) flags |= FrameFlags.ESI;
-      // Vector FD layout after the "d" data marker: <dlc> <dataLength> <bytes...>
-      // then optional trailing metadata. Anchor on "d", take dataLength (the
-      // second numeric token) bytes that follow it.
-      const d = tok.indexOf('d', 5);
+      // FD lines have no d/r marker. Fields after the id are (optionally a
+      // symbolic name) <brs> <esi> <dlcCode> <dataLength> <bytes...> [trailing].
+      // brs/esi are single chars 0/1, dlcCode is a single hex digit, dataLength
+      // is decimal — while data bytes are always 2 hex chars. Anchor on that.
       let data = new Uint8Array(0);
-      if (d >= 0 && /^\d+$/.test(tok[d + 1] || '')) {
-        const dataLen = /^\d+$/.test(tok[d + 2] || '') ? Number(tok[d + 2]) : Number(tok[d + 1]);
-        const first = /^\d+$/.test(tok[d + 2] || '') ? d + 3 : d + 2;
-        const n = Math.min(dataLen, 64, tok.length - first);
-        data = new Uint8Array(n);
-        for (let i = 0; i < n; i++) data[i] = parseInt(tok[first + i], 16) || 0;
+      for (let j = 5; j + 3 < tok.length; j++) {
+        if (
+          /^[01]$/.test(tok[j]) &&
+          /^[01]$/.test(tok[j + 1]) &&
+          /^[0-9a-fA-F]$/.test(tok[j + 2]) &&
+          /^\d{1,2}$/.test(tok[j + 3]) &&
+          Number(tok[j + 3]) <= 64
+        ) {
+          if (tok[j] === '1') flags |= FrameFlags.BRS;
+          if (tok[j + 1] === '1') flags |= FrameFlags.ESI;
+          const v = Number(tok[j + 3]);
+          const first = j + 4;
+          const n = Math.min(v, tok.length - first);
+          data = new Uint8Array(n);
+          for (let i = 0; i < n; i++) data[i] = parseInt(tok[first + i], 16) || 0;
+          break;
+        }
       }
       store.add(t, id, ext, ch, flags, data);
       continue;

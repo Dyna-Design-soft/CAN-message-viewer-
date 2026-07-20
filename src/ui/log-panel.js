@@ -1,7 +1,11 @@
 // Log File panel: open/drop a log file, show summary statistics.
 
 import { loadLogFile } from '../io/format-registry.js';
-import '../io/asc-reader.js'; // register formats (side effect)
+// Register all input formats (side-effect imports).
+import '../io/asc-reader.js';
+import '../io/blf-reader.js';
+import '../io/csv-writer.js';
+import '../io/tdms-reader.js';
 import { formatId } from '../util/hex.js';
 import { formatDuration, formatEpoch } from '../util/time.js';
 
