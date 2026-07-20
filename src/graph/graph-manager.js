@@ -110,14 +110,41 @@ export class GraphManager {
   setPlaybackTime(t) {
     this.cursors.setPlayback(t);
     for (const u of this.#allUplots()) u.redraw(false, false);
+    this.#updateLegends();
   }
 
   resizeAll() {
     for (const g of this.graphs) {
-      const w = g.body.clientWidth;
-      if (!w) continue;
-      if (g.uplots) for (const u of g.uplots) u.setSize({ width: w, height: u.height });
-      else if (g.uplot) g.uplot.setSize({ width: w, height: g.uplot.height });
+      if (g.panes) {
+        for (const p of g.panes) {
+          const w = p.plotEl.clientWidth, h = p.plotEl.clientHeight;
+          if (w && h) p.uplot.setSize({ width: w, height: h });
+        }
+      } else if (g.uplot && g.plotEl) {
+        const w = g.plotEl.clientWidth, h = g.plotEl.clientHeight;
+        if (w && h) g.uplot.setSize({ width: w, height: h });
+      }
+    }
+  }
+
+  /** Reference time for legend readouts: last cursor, else playback, else end. */
+  #refTime() {
+    const c = this.cursors.times;
+    if (c.length) return c[c.length - 1];
+    if (this.cursors.playback != null) return this.cursors.playback;
+    return null;
+  }
+
+  #updateLegends() {
+    const rt = this.#refTime();
+    for (const g of this.graphs) {
+      if (!g.panes) continue;
+      for (const p of g.panes) {
+        let v;
+        if (rt != null) v = valueAt(p.series, rt);
+        else v = p.series.v.length ? p.series.v[p.series.v.length - 1] : null;
+        p.valueEl.textContent = v == null ? '—' : fmtVal(v);
+      }
     }
   }
 
@@ -223,48 +250,59 @@ export class GraphManager {
     this.#destroyPlots(g);
     g.body.textContent = '';
     g.uplots = [];
+    g.panes = [];
+    g.paneHeights = g.paneHeights || {};
     const sigs = this.selection.map((q) => ({ q, series: this.#series(q) })).filter((s) => s.series && s.series.t.length);
     g.titleEl.textContent = `Split view · ${sigs.length} signal${sigs.length === 1 ? '' : 's'}`;
     if (sigs.length === 0) {
       empty(g.body, 'Selected signals have no samples in this log.');
       return;
     }
-    const width = g.body.clientWidth || 600;
     sigs.forEach((s, i) => {
       const isLast = i === sigs.length - 1;
       const color = SERIES_COLORS[i % SERIES_COLORS.length];
+      const unit = s.series.signal.unit || '';
+
       const pane = document.createElement('div');
       pane.className = 'split-pane';
-      const label = document.createElement('div');
-      label.className = 'split-pane-label';
-      const unit = s.series.signal.unit ? ` [${s.series.signal.unit}]` : '';
-      label.innerHTML = `<span class="dot" style="background:${color}"></span>${shortName(s.q)}${unit}`;
-      pane.appendChild(label);
+      pane.style.height = (g.paneHeights[s.q] ?? 160) + 'px';
+      const legend = document.createElement('div');
+      legend.className = 'track-legend';
+      const dot = spanEl('dot'); dot.style.background = color;
+      const name = spanEl('track-name'); name.textContent = shortName(s.q);
+      const unitEl = spanEl('track-unit'); unitEl.textContent = unit ? ` ${unit}` : '';
+      const valueEl = spanEl('track-value'); valueEl.textContent = '—';
+      legend.append(dot, name, unitEl, valueEl);
+      const plotEl = document.createElement('div'); plotEl.className = 'track-plot';
+      pane.append(legend, plotEl);
       g.body.appendChild(pane);
 
       const opts = {
-        ...this.#baseOpts(isLast ? 150 : 128, isLast),
-        width,
+        ...this.#baseOpts(0, isLast),
+        width: plotEl.clientWidth || 600,
+        height: plotEl.clientHeight || 120,
         axes: [
           this.#baseOpts(0, isLast).axes[0],
           { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE, width: 1 }, ticks: { stroke: TICK_STROKE }, size: Y_AXIS_SIZE, font: '11px ' + MONO },
         ],
         series: [
           {},
-          {
-            stroke: color,
-            width: 1.6,
-            spanGaps: false,
-            paths: stepped,
-            points: { show: false },
-            value: (u, v) => (v == null ? '—' : fmtVal(v)),
-          },
+          { stroke: color, width: 1.6, spanGaps: false, paths: stepped, points: { show: false }, value: (u, v) => (v == null ? '—' : fmtVal(v)) },
         ],
       };
-      const u = new uPlot(opts, [s.series.t, s.series.v], pane);
+      const u = new uPlot(opts, [s.series.t, s.series.v], plotEl);
       this.syncKey.sub(u);
       g.uplots.push(u);
+      g.panes.push({ series: s.series, valueEl, plotEl, uplot: u });
+
+      // drag handle to resize this track's height
+      const rez = makeVResizer(() => pane, (h) => {
+        g.paneHeights[s.q] = h;
+        u.setSize({ width: plotEl.clientWidth, height: plotEl.clientHeight });
+      });
+      g.body.appendChild(rez);
     });
+    this.#updateLegends();
   }
 
   // ---- OVERLAY: all signals on one plot, Y axes grouped by unit ----
@@ -315,9 +353,31 @@ export class GraphManager {
         value: (u, v) => (v == null ? '—' : fmtVal(v)),
       });
     });
-    const opts = { ...base, width: g.body.clientWidth || 600, series, axes, legend: { show: true } };
-    g.uplot = new uPlot(opts, [xs, ...cols], g.body);
+    const plotEl = this.#mountResizable(g, 300);
+    const opts = { ...base, width: plotEl.clientWidth || 600, height: plotEl.clientHeight || 280, series, axes, legend: { show: true } };
+    g.uplot = new uPlot(opts, [xs, ...cols], plotEl);
     this.syncKey.sub(g.uplot);
+  }
+
+  /** Give a card an explicit-height body (flex) with a bottom drag handle. */
+  #mountResizable(g, defaultH) {
+    g.body.textContent = '';
+    g.body.style.display = 'flex';
+    g.body.style.flexDirection = 'column';
+    g.body.style.height = (g.bodyHeight ?? defaultH) + 'px';
+    const plotEl = document.createElement('div');
+    plotEl.className = 'track-plot';
+    g.body.appendChild(plotEl);
+    if (!g.resizer) {
+      g.el.classList.add('resizable');
+      g.resizer = makeVResizer(() => g.body, (h) => {
+        g.bodyHeight = h;
+        if (g.uplot) g.uplot.setSize({ width: plotEl.clientWidth, height: plotEl.clientHeight });
+      });
+      g.el.appendChild(g.resizer);
+    }
+    g.plotEl = plotEl;
+    return plotEl;
   }
 
   // ---- XY ----
@@ -358,9 +418,10 @@ export class GraphManager {
       if (yatt == null) continue;
       xv[m] = xs.v[i]; yv[m] = yatt; m++;
     }
+    const plotEl = this.#mountResizable(g, 280);
     const opts = {
-      width: g.body.clientWidth || 600,
-      height: 260,
+      width: plotEl.clientWidth || 600,
+      height: plotEl.clientHeight || 260,
       mode: 2,
       legend: { show: false },
       scales: { x: { time: false }, y: {} },
@@ -378,13 +439,14 @@ export class GraphManager {
         },
       ],
     };
-    g.uplot = new uPlot(opts, [null, [xv.subarray(0, m), yv.subarray(0, m)]], g.body);
+    g.uplot = new uPlot(opts, [null, [xv.subarray(0, m), yv.subarray(0, m)]], plotEl);
   }
 
   // ---- shared ----
 
   #onCursorMoved() {
     for (const u of this.#allUplots()) u.redraw(false, false);
+    this.#updateLegends();
     this.#renderReadout();
   }
 
@@ -485,4 +547,41 @@ function empty(el, msg) {
   p.className = 'placeholder';
   p.textContent = msg;
   el.appendChild(p);
+}
+
+function spanEl(cls) {
+  const s = document.createElement('span');
+  s.className = cls;
+  return s;
+}
+
+/**
+ * Vertical drag handle. `getEl` returns the element whose height to change;
+ * `onResize(newHeight)` fires during the drag. Returns the handle element.
+ */
+function makeVResizer(getEl, onResize) {
+  const h = document.createElement('div');
+  h.className = 'pane-resizer';
+  h.setAttribute('role', 'separator');
+  h.setAttribute('aria-orientation', 'horizontal');
+  let startY = 0, startH = 0;
+  h.addEventListener('pointerdown', (e) => {
+    const el = getEl();
+    startY = e.clientY;
+    startH = el.getBoundingClientRect().height;
+    h.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    const move = (ev) => {
+      const nh = Math.max(70, startH + (ev.clientY - startY));
+      el.style.height = nh + 'px';
+      onResize(nh);
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+  return h;
 }

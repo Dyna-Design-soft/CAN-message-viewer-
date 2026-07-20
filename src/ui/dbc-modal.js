@@ -1,26 +1,11 @@
-// DBC manager modal: load/unload DBC files, browse cluster -> frames -> signals.
+// DBC manager tab: load/unload DBC files, browse cluster -> frames -> signals.
 
 import { parseDbc } from '../core/dbc-parser.js';
 import { formatId } from '../util/hex.js';
 
 export function initDbcModal(app) {
-  const modal = document.getElementById('dbc-modal');
   const tree = document.getElementById('dbc-tree');
   const fileInput = document.getElementById('dbc-file-input');
-
-  document.getElementById('btn-dbc').addEventListener('click', () => {
-    modal.hidden = false;
-    render();
-  });
-  document.getElementById('dbc-modal-close').addEventListener('click', () => {
-    modal.hidden = true;
-  });
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.hidden = true;
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.hidden) modal.hidden = true;
-  });
 
   document.getElementById('dbc-load').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', async () => {
@@ -32,6 +17,9 @@ export function initDbcModal(app) {
     app.bus.emit('dbc:changed', { clusters: app.dbc.clusters });
     render();
   });
+
+  // keep the tab in sync whether DBCs change here or via demo auto-load
+  app.bus.on('dbc:changed', render);
 
   function render() {
     tree.textContent = '';

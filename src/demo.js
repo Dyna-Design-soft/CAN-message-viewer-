@@ -77,10 +77,12 @@ export function loadDemo(app) {
   const store = buildDemoStore();
   app.adoptLog(store, 'demo.asc (sample data)', 'Demo');
 
+  // Show the Analysis tab first so the graph panes have real layout dimensions,
+  // then plot a few signals in split view.
+  app.selectPanel('panel-analysis');
   app.applySelection([
     'demo/EngineData/EngineSpeed',
     'demo/EngineData/VehicleSpeed',
     'demo/EngineData/EngineTemp',
   ]);
-  app.selectPanel('panel-analysis');
 }

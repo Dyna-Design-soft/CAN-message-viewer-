@@ -19,20 +19,28 @@
   </div>
 
   <nav class="tab-bar" role="tablist" aria-label="Primary views">
+    <button class="tab" data-panel="panel-dbc" role="tab">DBC <span id="dbc-count" class="badge" hidden>0</span></button>
     <button class="tab active" data-panel="panel-log" role="tab">Log File</button>
     <button class="tab" data-panel="panel-analysis" role="tab">Analysis</button>
     <button class="tab" data-panel="panel-live" role="tab">Live</button>
   </nav>
-
-  <div class="header-actions">
-    <button id="btn-dbc" class="btn btn-accent" title="Manage DBC databases" aria-label="Manage DBC databases">
-      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 1.1 6 1.5S15.9 8 12 8 6 6.9 6 6.5 8.1 5 12 5zm6 13c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.9c1.5.8 3.7 1.2 6 1.2s4.5-.4 6-1.2V18zm0-5.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5V9.6C7.5 10.4 9.7 10.8 12 10.8s4.5-.4 6-1.2v2.9z"/></svg>
-      DBC <span id="dbc-count" class="badge" hidden>0</span>
-    </button>
-  </div>
 </header>
 
 <main class="app-main">
+
+  <!-- ======================= DBC PANEL ======================= -->
+  <section id="panel-dbc" class="panel">
+    <div class="dbc-layout">
+      <div class="area-toolbar">
+        <input type="file" id="dbc-file-input" accept=".dbc" multiple hidden>
+        <button id="dbc-load" class="btn btn-accent">Load DBC file(s)…</button>
+        <span class="muted small">One or more .dbc files; each file becomes a cluster.</span>
+      </div>
+      <div id="dbc-tree" class="dbc-tree">
+        <p class="placeholder">No DBC files loaded yet.</p>
+      </div>
+    </div>
+  </section>
 
   <!-- ======================= LOG FILE PANEL ======================= -->
   <section id="panel-log" class="panel active">
@@ -126,6 +134,8 @@
               </table>
             </div>
           </div>
+
+          <div class="v-splitter" id="analysis-splitter" aria-hidden="true"></div>
 
           <div class="analysis-graph-area">
             <div class="area-toolbar">
@@ -221,6 +231,10 @@
 </main>
 
 <nav class="bottom-nav" role="tablist" aria-label="Primary views">
+  <button class="tab" data-panel="panel-dbc" role="tab">
+    <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 1.1 6 1.5S15.9 8 12 8 6 6.9 6 6.5 8.1 5 12 5zm6 13c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.9c1.5.8 3.7 1.2 6 1.2s4.5-.4 6-1.2V18zm0-5.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5V9.6C7.5 10.4 9.7 10.8 12 10.8s4.5-.4 6-1.2v2.9z"/></svg>
+    DBC
+  </button>
   <button class="tab active" data-panel="panel-log" role="tab">
     <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 1.5V9h3.5L14 5.5zM7 12h10v1.5H7V12zm0 3.5h10V17H7v-1.5z"/></svg>
     Log
@@ -242,24 +256,6 @@
   <span class="toolbar-spacer"></span>
   <span id="sb-frames"></span>
 </footer>
-
-<!-- ======================= DBC MODAL ======================= -->
-<div id="dbc-modal" class="modal-backdrop" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dbc-modal-title">
-    <div class="modal-head">
-      <h2 id="dbc-modal-title">DBC databases</h2>
-      <button class="btn icon-btn" id="dbc-modal-close" title="Close" aria-label="Close">✕</button>
-    </div>
-    <div class="modal-toolbar">
-      <input type="file" id="dbc-file-input" accept=".dbc" multiple hidden>
-      <button id="dbc-load" class="btn btn-accent">Load DBC file(s)…</button>
-      <span class="muted">One or more .dbc files; each file becomes a cluster.</span>
-    </div>
-    <div id="dbc-tree" class="dbc-tree">
-      <p class="placeholder">No DBC files loaded yet.</p>
-    </div>
-  </div>
-</div>
 
 <script src="src/graph/uplot.min.js"></script>
 <script type="module" src="src/main.js"></script>

@@ -200,6 +200,30 @@ export function initAnalysisPanel(app) {
     });
   }
 
+  // ---- desktop: draggable splitter between value table and graph area ----
+  const splitter = document.getElementById('analysis-splitter');
+  const tableArea = document.querySelector('.analysis-table-area');
+  if (splitter && tableArea) {
+    splitter.addEventListener('pointerdown', (e) => {
+      const startX = e.clientX;
+      const startW = tableArea.getBoundingClientRect().width;
+      splitter.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      const move = (ev) => {
+        const max = split.getBoundingClientRect().width - 260;
+        const w = Math.max(220, Math.min(startW + (ev.clientX - startX), max));
+        tableArea.style.width = w + 'px';
+        graphs.resizeAll();
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  }
+
   // ---- events ----
   app.bus.on('dbc:changed', () => {
     renderTree();
