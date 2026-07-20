@@ -182,6 +182,7 @@ export function initAnalysisPanel(app) {
     graphs.cursors.add(playback.time || (playback.tMin + playback.range / 2));
   });
   document.getElementById('cursor-clear').addEventListener('click', () => graphs.cursors.clear());
+  document.getElementById('graph-reset').addEventListener('click', () => graphs.resetZoom());
 
   // ---- mobile: signal drawer + Table/Graphs segmented control ----
   const layout = document.querySelector('.analysis-layout');

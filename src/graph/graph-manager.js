@@ -42,8 +42,10 @@ export class GraphManager {
     this.cursors = new CursorModel();
     this.syncKey = uPlot.sync('graphstack-' + storeTag);
     this.#syncingScale = false;
-    this.cursors.onChange(() => this.#renderReadout());
+    this.hoverTime = null;
+    this.cursors.onChange(() => { this.#renderReadout(); this.#updateLegends(); });
     this.readoutEl = storeTag === 'live' ? null : document.getElementById('cursor-readout');
+    this.timeEl = storeTag === 'live' ? null : document.getElementById('graph-time');
   }
 
   #syncingScale;
@@ -127,16 +129,26 @@ export class GraphManager {
     }
   }
 
-  /** Reference time for legend readouts: last cursor, else playback, else end. */
+  /** Reference time for readouts: live hover, else last cursor, else playback. */
   #refTime() {
+    if (this.hoverTime != null) return this.hoverTime;
     const c = this.cursors.times;
     if (c.length) return c[c.length - 1];
     if (this.cursors.playback != null) return this.cursors.playback;
     return null;
   }
 
+  #onHover(u) {
+    const left = u.cursor.left;
+    const t = left != null && left >= 0 ? u.posToVal(left, 'x') : null;
+    if (t === this.hoverTime) return;
+    this.hoverTime = t;
+    this.#updateLegends();
+  }
+
   #updateLegends() {
     const rt = this.#refTime();
+    const hovering = this.hoverTime != null;
     for (const g of this.graphs) {
       if (!g.panes) continue;
       for (const p of g.panes) {
@@ -146,6 +158,27 @@ export class GraphManager {
         p.valueEl.textContent = v == null ? '—' : fmtVal(v);
       }
     }
+    if (this.timeEl) {
+      this.timeEl.textContent = rt == null ? '' : `${hovering ? '⌖' : 't'} = ${rt.toFixed(4)} s`;
+      this.timeEl.classList.toggle('hovering', hovering);
+    }
+  }
+
+  /** Reset the time axis to the full data range across all time-based graphs. */
+  resetZoom() {
+    let lo = Infinity, hi = -Infinity;
+    for (const q of this.selection) {
+      const s = this.#series(q);
+      if (s && s.t.length) { lo = Math.min(lo, s.t[0]); hi = Math.max(hi, s.t[s.t.length - 1]); }
+    }
+    if (!isFinite(lo) || hi <= lo) return;
+    this.#syncingScale = true;
+    for (const g of this.graphs) {
+      if (g.role === 'xy') continue;
+      const us = g.panes ? g.panes.map((p) => p.uplot) : g.uplot ? [g.uplot] : [];
+      for (const u of us) u.setScale('x', { min: lo, max: hi });
+    }
+    this.#syncingScale = false;
   }
 
   // ---- primary graph (auto-follows selection) ----
@@ -226,10 +259,17 @@ export class GraphManager {
   #baseOpts(height, showXLabels) {
     return {
       height,
-      cursor: { sync: { key: this.syncKey.key, setSeries: false }, points: { show: false } },
+      cursor: {
+        sync: { key: this.syncKey.key, setSeries: false },
+        points: { show: false },
+        drag: { x: true, y: false, dist: 6 }, // rubber-band zoom on the time axis
+      },
       legend: { show: false },
       plugins: [cursorPlugin(this.cursors, () => this.#onCursorMoved())],
-      hooks: { setScale: this.#xSyncHook() },
+      hooks: {
+        setScale: this.#xSyncHook(),
+        setCursor: [(u) => this.#onHover(u)],
+      },
       axes: [
         {
           stroke: AXIS_STROKE,
