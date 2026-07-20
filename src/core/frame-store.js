@@ -218,6 +218,46 @@ export class FrameStore {
     this.generation++;
   }
 
+  /**
+   * Serialize to transferable columnar buffers (trimmed to `count`), for
+   * moving a parsed store out of a Web Worker with zero re-parsing.
+   */
+  serialize() {
+    return {
+      count: this.count,
+      t0Epoch: this.t0Epoch,
+      t: this.t.slice(0, this.count),
+      id: this.id.slice(0, this.count),
+      flags: this.flags.slice(0, this.count),
+      len: this.len.slice(0, this.count),
+      ch: this.ch.slice(0, this.count),
+      dataOfs: this.dataOfs.slice(0, this.count),
+      dataPool: this.dataPool.slice(0, this.dataUsed),
+      dataUsed: this.dataUsed,
+    };
+  }
+
+  /** ArrayBuffers to pass in a worker postMessage transfer list. */
+  static transferList(s) {
+    return [s.t.buffer, s.id.buffer, s.flags.buffer, s.len.buffer, s.ch.buffer, s.dataOfs.buffer, s.dataPool.buffer];
+  }
+
+  static fromSerialized(s) {
+    const store = new FrameStore();
+    store.count = s.count;
+    store.t0Epoch = s.t0Epoch;
+    store.t = s.t;
+    store.id = s.id;
+    store.flags = s.flags;
+    store.len = s.len;
+    store.ch = s.ch;
+    store.dataOfs = s.dataOfs;
+    store.dataPool = s.dataPool;
+    store.dataUsed = s.dataUsed;
+    store.generation = 1;
+    return store;
+  }
+
   /** Summary statistics over the whole store (single pass + index reuse). */
   computeStats() {
     const n = this.count;

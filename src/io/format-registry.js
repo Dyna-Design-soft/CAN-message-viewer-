@@ -30,7 +30,7 @@ export function detectFormat(file, head) {
   return null;
 }
 
-/** Load a file into a FrameStore using the detected format. */
+/** Load a file into a FrameStore using the detected format (this thread). */
 export async function loadLogFile(file, onProgress) {
   const head = new Uint8Array(await file.slice(0, 256).arrayBuffer());
   const fmt = detectFormat(file, head);
@@ -42,4 +42,36 @@ export async function loadLogFile(file, onProgress) {
   }
   const store = await fmt.read(file, onProgress);
   return { store, format: fmt.name };
+}
+
+/**
+ * Load a file in a Web Worker (keeps the UI responsive on large files),
+ * falling back to main-thread parsing if workers are unavailable.
+ */
+export async function loadLogFileInWorker(file) {
+  const { FrameStore } = await import('../core/frame-store.js');
+  if (typeof Worker === 'undefined') return loadLogFile(file);
+  return new Promise((resolve, reject) => {
+    let worker;
+    try {
+      worker = new Worker(new URL('./parse-worker.js', import.meta.url), { type: 'module' });
+    } catch {
+      resolve(loadLogFile(file));
+      return;
+    }
+    worker.onmessage = (e) => {
+      worker.terminate();
+      if (e.data.ok) {
+        resolve({ store: FrameStore.fromSerialized(e.data.store), format: e.data.format });
+      } else {
+        reject(new Error(e.data.error));
+      }
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      // Module-worker support issues: fall back to the main thread.
+      loadLogFile(file).then(resolve, reject);
+    };
+    worker.postMessage({ file });
+  });
 }

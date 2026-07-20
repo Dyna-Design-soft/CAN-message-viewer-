@@ -1,0 +1,6 @@
+VERSION "demo2"
+BU_ NodeB
+BO_ 256 BrakeData: 8 NodeB
+ SG_ BrakePressure : 0|16@1+ (0.1,0) [0|6553.5] "bar" NodeB
+BO_ 1024 Diag: 8 NodeB
+ SG_ DiagCode : 0|8@1+ (1,0) [0|255] "" NodeB

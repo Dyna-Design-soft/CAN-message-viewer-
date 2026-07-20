@@ -1,6 +1,6 @@
 // Log File panel: open/drop a log file, show summary statistics.
 
-import { loadLogFile } from '../io/format-registry.js';
+import { loadLogFileInWorker } from '../io/format-registry.js';
 // Register all input formats (side-effect imports).
 import '../io/asc-reader.js';
 import '../io/blf-reader.js';
@@ -43,7 +43,7 @@ export function initLogPanel(app) {
   async function openFile(file) {
     setBusy(`Loading ${file.name}…`);
     try {
-      const { store, format } = await loadLogFile(file);
+      const { store, format } = await loadLogFileInWorker(file);
       const stats = store.computeStats();
       app.logStore = store;
       app.logStats = stats;
