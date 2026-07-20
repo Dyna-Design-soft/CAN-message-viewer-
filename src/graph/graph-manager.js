@@ -45,7 +45,11 @@ export class GraphManager {
     this.hoverTime = null;
     this.splitTracks = []; // Array<qname[]> — user-arrangeable tracks (drag & drop)
     this._colors = new Map(); // stable color per qualified signal name
-    this.cursors.onChange(() => { this.#renderReadout(); this.#updateLegends(); });
+    this.cursors.onChange(() => {
+      for (const u of this.#allUplots()) u.redraw(false, false);
+      this.#renderReadout();
+      this.#updateLegends();
+    });
     this.readoutEl = storeTag === 'live' ? null : document.getElementById('cursor-readout');
     this.timeEl = storeTag === 'live' ? null : document.getElementById('graph-time');
   }
@@ -361,6 +365,17 @@ export class GraphManager {
 
       const legend = document.createElement('div');
       legend.className = 'track-legend';
+      // drag grip to reorder this track
+      const grip = document.createElement('span');
+      grip.className = 'track-grip';
+      grip.textContent = '⠿';
+      grip.title = 'Drag to reorder track';
+      grip.draggable = true;
+      grip.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('application/x-track', String(ti));
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      legend.appendChild(grip);
       const plotEl = document.createElement('div');
       plotEl.className = 'track-plot';
 
@@ -380,7 +395,12 @@ export class GraphManager {
         const name = spanEl('track-name'); name.textContent = shortName(s.q);
         const unitEl = spanEl('track-unit'); unitEl.textContent = unit ? ` ${unit}` : '';
         const valueEl = spanEl('track-value'); valueEl.textContent = '—';
-        ent.append(dot, name, unitEl, valueEl);
+        const rm = document.createElement('button');
+        rm.className = 'entry-remove';
+        rm.textContent = '✕';
+        rm.title = 'Remove ' + shortName(s.q) + ' from this track';
+        rm.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.removeSignalFromTrack(s.q); });
+        ent.append(dot, name, unitEl, valueEl, rm);
         legend.appendChild(ent);
         entries.push({ series: s.series, valueEl });
 
@@ -436,6 +456,8 @@ export class GraphManager {
     pane.addEventListener('drop', (e) => {
       e.preventDefault();
       pane.classList.remove('drop-hover');
+      const trackIdx = e.dataTransfer.getData('application/x-track');
+      if (trackIdx !== '') { this.reorderTrack(Number(trackIdx), index); return; }
       const q = e.dataTransfer.getData('text/plain');
       if (q) this.dropSignal(q, index);
     });
@@ -450,10 +472,37 @@ export class GraphManager {
     dz.addEventListener('drop', (e) => {
       e.preventDefault();
       dz.classList.remove('drop-hover');
+      const trackIdx = e.dataTransfer.getData('application/x-track');
+      if (trackIdx !== '') { this.reorderTrack(Number(trackIdx), null); return; }
       const q = e.dataTransfer.getData('text/plain');
       if (q) this.dropSignal(q, null);
     });
     g.body.appendChild(dz);
+  }
+
+  /** Move a track to a new position (to = null → end). */
+  reorderTrack(from, to) {
+    const arr = this.splitTracks;
+    if (from == null || from < 0 || from >= arr.length) return;
+    const dest = to == null ? arr.length - 1 : (from < to ? to - 1 : to);
+    if (dest === from) return;
+    const [moved] = arr.splice(from, 1);
+    arr.splice(Math.max(0, Math.min(dest, arr.length)), 0, moved);
+    this.#syncPrimary();
+    requestAnimationFrame(() => this.resizeAll());
+  }
+
+  /** Remove one signal from its track (and deselect it). */
+  removeSignalFromTrack(qname) {
+    for (const t of this.splitTracks) {
+      const i = t.indexOf(qname);
+      if (i >= 0) t.splice(i, 1);
+    }
+    this.splitTracks = this.splitTracks.filter((t) => t.length);
+    this.app.selection.delete(qname);
+    this.#syncPrimary();
+    requestAnimationFrame(() => this.resizeAll());
+    this.app.bus.emit('selection:changed', { signals: [...this.app.selection] });
   }
 
   // ---- OVERLAY: all signals on one plot, Y axes grouped by unit ----
@@ -621,8 +670,21 @@ export class GraphManager {
     const sel = this.selection;
     if (times.length === 0 || sel.length === 0) { this.readoutEl.hidden = true; return; }
     this.readoutEl.hidden = false;
-    const header = ['Signal', ...times.map((t, i) => `C${i + 1} @ ${t.toFixed(4)}s`)];
-    if (times.length >= 2) header.push('Δ (C2−C1)');
+    this.readoutEl.textContent = '';
+
+    const region = times.length >= 2;
+    if (region) {
+      const a = times[0], b = times[1];
+      const info = document.createElement('div');
+      info.className = 'region-info';
+      info.textContent = `A→B region · Δt = ${Math.abs(b - a).toFixed(4)} s  ` +
+        `(A ${Math.min(a, b).toFixed(4)}s → B ${Math.max(a, b).toFixed(4)}s)`;
+      this.readoutEl.appendChild(info);
+    }
+
+    const header = ['Signal', ...times.map((_, i) => `C${i + 1}`)];
+    if (region) header.push('Δ', 'Min', 'Max', 'Mean', 'P-P');
+
     const t = document.createElement('table');
     const thead = document.createElement('thead');
     const htr = document.createElement('tr');
@@ -634,24 +696,55 @@ export class GraphManager {
     });
     thead.appendChild(htr);
     t.appendChild(thead);
+
     const tb = document.createElement('tbody');
     for (const q of sel) {
       const series = this.#series(q);
       const cells = [shortName(q)];
       const vals = times.map((tt) => valueAt(series, tt));
       cells.push(...vals.map((v) => (v == null ? '—' : fmtVal(v))));
-      if (times.length >= 2) {
+      if (region) {
         const d = vals[1] != null && vals[0] != null ? vals[1] - vals[0] : null;
         cells.push(d == null ? '—' : fmtVal(d));
+        const st = regionStats(series, times[0], times[1]);
+        if (st) cells.push(fmtVal(st.min), fmtVal(st.max), fmtVal(st.mean), fmtVal(st.pp));
+        else cells.push('—', '—', '—', '—');
       }
       const tr = document.createElement('tr');
       cells.forEach((c) => { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); });
       tb.appendChild(tr);
     }
     t.appendChild(tb);
-    this.readoutEl.textContent = '';
     this.readoutEl.appendChild(t);
   }
+}
+
+/**
+ * Statistics of a signal over the time region [a,b]: min, max, peak-to-peak,
+ * and a time-weighted (sample-and-hold) mean.
+ */
+export function regionStats(series, a, b) {
+  if (!series || !series.t.length) return null;
+  const lo = Math.min(a, b), hi = Math.max(a, b);
+  let min = Infinity, max = -Infinity, area = 0;
+  let prevT = lo;
+  let prevV = valueAt(series, lo); // sample-and-hold value at the left edge
+  if (prevV != null) { min = prevV; max = prevV; }
+  for (let i = 0; i < series.t.length; i++) {
+    const t = series.t[i];
+    if (t < lo) continue;
+    if (t > hi) break;
+    const v = series.v[i];
+    if (prevV != null) area += prevV * (t - prevT);
+    prevT = t;
+    prevV = v;
+    if (v != null) { if (v < min) min = v; if (v > max) max = v; }
+  }
+  if (prevV != null) area += prevV * (hi - prevT);
+  if (!isFinite(min)) return null;
+  const dur = hi - lo;
+  const mean = dur > 0 ? area / dur : prevV;
+  return { min, max, mean, pp: max - min, dur };
 }
 
 /**
