@@ -24,16 +24,17 @@ const app = {
 app.channelMap = new ChannelMap(app.dbc);
 app.seriesCache = new SeriesCache(app);
 
-// ---- tab switching ----
-const tabs = document.querySelectorAll('.tab-bar .tab');
+// ---- tab switching (top tab bar + mobile bottom nav stay in sync) ----
+const tabs = document.querySelectorAll('.tab-bar .tab, .bottom-nav .tab');
+function selectPanel(panelId) {
+  for (const t of tabs) t.classList.toggle('active', t.dataset.panel === panelId);
+  for (const p of document.querySelectorAll('.panel')) {
+    p.classList.toggle('active', p.id === panelId);
+  }
+  bus.emit('tab:changed', { panel: panelId });
+}
 for (const tab of tabs) {
-  tab.addEventListener('click', () => {
-    for (const t of tabs) t.classList.toggle('active', t === tab);
-    for (const p of document.querySelectorAll('.panel')) {
-      p.classList.toggle('active', p.id === tab.dataset.panel);
-    }
-    bus.emit('tab:changed', { panel: tab.dataset.panel });
-  });
+  tab.addEventListener('click', () => selectPanel(tab.dataset.panel));
 }
 
 // ---- status bar ----

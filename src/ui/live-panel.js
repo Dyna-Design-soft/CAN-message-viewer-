@@ -350,7 +350,7 @@ class LiveTrend {
     }
     const unitScales = new Map();
     const series = [{}];
-    const axes = [{ stroke: '#8b949e', grid: { stroke: '#2b3138' } }];
+    const axes = [{ stroke: '#8a94a6', grid: { stroke: 'rgba(255,255,255,0.06)' } }];
     let side = 0;
     let ci = 0;
     for (const buf of this.buffers.values()) {
@@ -359,7 +359,7 @@ class LiveTrend {
       if (!scale) {
         scale = 'y' + unitScales.size;
         unitScales.set(unit, scale);
-        axes.push({ scale, stroke: '#8b949e', side: side % 2 === 0 ? 3 : 1, label: unit, size: 44, grid: { show: unitScales.size === 1, stroke: '#2b3138' } });
+        axes.push({ scale, stroke: '#8a94a6', side: side % 2 === 0 ? 3 : 1, label: unit, size: 56, grid: { show: unitScales.size === 1, stroke: 'rgba(255,255,255,0.06)' } });
         side++;
       }
       series.push({
@@ -405,7 +405,7 @@ class LiveTrend {
   }
 }
 
-const COLORS = ['#4da3ff', '#ff8f6b', '#7be0a8', '#e0c93c', '#c58bff', '#6be0ff', '#ff7ba8', '#9bd85a'];
+const COLORS = ['#4da3ff', '#ffa94d', '#22c55e', '#e879f9', '#38e0d0', '#f472b6', '#a3e635', '#fbbf24'];
 
 // Small modal asking which format to save the recording as.
 function pickFormat() {

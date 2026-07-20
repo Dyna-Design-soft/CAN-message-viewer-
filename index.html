@@ -18,14 +18,14 @@
     CAN Message Viewer
   </div>
 
-  <nav class="tab-bar" role="tablist">
+  <nav class="tab-bar" role="tablist" aria-label="Primary views">
     <button class="tab active" data-panel="panel-log" role="tab">Log File</button>
     <button class="tab" data-panel="panel-analysis" role="tab">Analysis</button>
     <button class="tab" data-panel="panel-live" role="tab">Live</button>
   </nav>
 
   <div class="header-actions">
-    <button id="btn-dbc" class="btn btn-accent" title="Manage DBC databases">
+    <button id="btn-dbc" class="btn btn-accent" title="Manage DBC databases" aria-label="Manage DBC databases">
       <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 3C7.6 3 4 4.3 4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 1.1 6 1.5S15.9 8 12 8 6 6.9 6 6.5 8.1 5 12 5zm6 13c0 .4-2.1 1.5-6 1.5S6 18.4 6 18v-2.9c1.5.8 3.7 1.2 6 1.2s4.5-.4 6-1.2V18zm0-5.5c0 .4-2.1 1.5-6 1.5s-6-1.1-6-1.5V9.6C7.5 10.4 9.7 10.8 12 10.8s4.5-.4 6-1.2v2.9z"/></svg>
       DBC <span id="dbc-count" class="badge" hidden>0</span>
     </button>
@@ -72,9 +72,11 @@
   <!-- ======================= ANALYSIS PANEL ======================= -->
   <section id="panel-analysis" class="panel">
     <div class="analysis-layout">
-      <aside class="signal-panel">
+      <div class="drawer-backdrop" id="signal-drawer-backdrop"></div>
+      <aside class="signal-panel" id="signal-panel">
         <div class="signal-panel-head">
-          <input type="search" id="signal-filter" placeholder="Filter signals…">
+          <input type="search" id="signal-filter" placeholder="Filter signals…" aria-label="Filter signals">
+          <button class="btn icon-btn drawer-close" id="signal-drawer-close" aria-label="Close signal list">✕</button>
         </div>
         <div id="signal-tree" class="signal-tree">
           <p class="placeholder">Load a DBC file and a log file to list signals.</p>
@@ -83,25 +85,32 @@
 
       <div class="analysis-main">
         <div class="playback-bar">
-          <button id="pb-play" class="btn icon-btn" title="Play / pause">▶</button>
-          <button id="pb-stop" class="btn icon-btn" title="Stop (back to start)">⏹</button>
-          <input type="range" id="pb-slider" min="0" max="1000" value="0" step="1">
+          <button id="drawer-toggle" class="btn icon-btn drawer-toggle" aria-label="Show signal list" title="Signals">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+          </button>
+          <button id="pb-play" class="btn icon-btn" title="Play / pause" aria-label="Play or pause">▶</button>
+          <button id="pb-stop" class="btn icon-btn" title="Stop (back to start)" aria-label="Stop and rewind">⏹</button>
+          <input type="range" id="pb-slider" min="0" max="1000" value="0" step="1" aria-label="Playback position">
           <span id="pb-time" class="mono">0.000 s</span>
-          <select id="pb-speed" title="Playback speed">
+          <select id="pb-speed" title="Playback speed" aria-label="Playback speed">
             <option value="0.1">0.1×</option>
             <option value="0.5">0.5×</option>
             <option value="1" selected>1×</option>
             <option value="2">2×</option>
             <option value="10">10×</option>
           </select>
+          <span class="segmented" id="analysis-segmented" role="tablist" aria-label="Analysis view">
+            <button data-seg="table" class="active">Table</button>
+            <button data-seg="graphs">Graphs</button>
+          </span>
         </div>
 
-        <div class="analysis-split">
+        <div class="analysis-split show-table">
           <div class="analysis-table-area">
             <div class="area-toolbar">
               <strong>Signal values</strong>
               <label class="toolbar-field">Update interval
-                <select id="table-interval">
+                <select id="table-interval" aria-label="Table update interval">
                   <option value="50">50 ms</option>
                   <option value="100" selected>100 ms</option>
                   <option value="250">250 ms</option>
@@ -120,17 +129,20 @@
 
           <div class="analysis-graph-area">
             <div class="area-toolbar">
-              <strong>Graphs</strong>
+              <div class="toolbar-group" role="group" aria-label="Graph layout">
+                <button id="graph-mode-split" class="btn is-active" title="One aligned graph per selected signal">Split view</button>
+                <button id="graph-mode-overlay" class="btn" title="All signals on one plot">Overlay</button>
+                <button id="graph-add-xy" class="btn" title="Add an X-Y scatter of two signals">+ XY</button>
+              </div>
+              <span class="toolbar-spacer"></span>
               <div class="toolbar-group">
-                <button id="graph-add-trend" class="btn">+ Trend graph</button>
-                <button id="graph-add-xy" class="btn">+ XY graph</button>
-                <button id="cursor-add" class="btn">+ Cursor</button>
-                <button id="cursor-clear" class="btn" title="Remove all cursors">Clear cursors</button>
+                <button id="cursor-add" class="btn" title="Add a measurement cursor">+ Cursor</button>
+                <button id="cursor-clear" class="btn" title="Remove all cursors">Clear</button>
               </div>
             </div>
             <div id="cursor-readout" class="cursor-readout" hidden></div>
             <div id="graph-stack" class="graph-stack">
-              <p class="placeholder">Add a graph, then tick signals on the left.</p>
+              <p class="placeholder">Tick signals on the left — each appears as its own aligned graph.</p>
             </div>
           </div>
         </div>
@@ -208,6 +220,21 @@
   </section>
 </main>
 
+<nav class="bottom-nav" role="tablist" aria-label="Primary views">
+  <button class="tab active" data-panel="panel-log" role="tab">
+    <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm10 1.5V9h3.5L14 5.5zM7 12h10v1.5H7V12zm0 3.5h10V17H7v-1.5z"/></svg>
+    Log
+  </button>
+  <button class="tab" data-panel="panel-analysis" role="tab">
+    <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 17l4-6 4 3 5-8 5 6"/></svg>
+    Analysis
+  </button>
+  <button class="tab" data-panel="panel-live" role="tab">
+    <svg class="tab-ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0-5a9 9 0 0 0-9 9h2a7 7 0 0 1 7-7V3zm0 16a7 7 0 0 1-7-7H3a9 9 0 0 0 9 9v-2z"/></svg>
+    Live
+  </button>
+</nav>
+
 <footer class="status-bar">
   <span id="sb-dbc">DBC: none</span>
   <span id="sb-log">Log: none</span>
@@ -221,7 +248,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dbc-modal-title">
     <div class="modal-head">
       <h2 id="dbc-modal-title">DBC databases</h2>
-      <button class="btn icon-btn" id="dbc-modal-close" title="Close">✕</button>
+      <button class="btn icon-btn" id="dbc-modal-close" title="Close" aria-label="Close">✕</button>
     </div>
     <div class="modal-toolbar">
       <input type="file" id="dbc-file-input" accept=".dbc" multiple hidden>

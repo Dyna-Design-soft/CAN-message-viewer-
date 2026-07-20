@@ -155,13 +155,42 @@ export function initAnalysisPanel(app) {
   intervalSel.addEventListener('change', applyInterval);
   applyInterval();
 
-  // ---- graph toolbar ----
-  document.getElementById('graph-add-trend').addEventListener('click', () => graphs.addTrend());
-  document.getElementById('graph-add-xy').addEventListener('click', () => graphs.addXY());
+  // ---- graph toolbar: layout mode (split / overlay) + XY + cursors ----
+  const modeSplit = document.getElementById('graph-mode-split');
+  const modeOverlay = document.getElementById('graph-mode-overlay');
+  function setMode(mode) {
+    modeSplit.classList.toggle('is-active', mode === 'split');
+    modeOverlay.classList.toggle('is-active', mode === 'overlay');
+    graphs.setMode(mode);
+    requestAnimationFrame(() => graphs.resizeAll());
+  }
+  modeSplit.addEventListener('click', () => setMode('split'));
+  modeOverlay.addEventListener('click', () => setMode('overlay'));
+  document.getElementById('graph-add-xy').addEventListener('click', () => {
+    graphs.addXY();
+    requestAnimationFrame(() => graphs.resizeAll());
+  });
   document.getElementById('cursor-add').addEventListener('click', () => {
     graphs.cursors.add(playback.time || (playback.tMin + playback.range / 2));
   });
   document.getElementById('cursor-clear').addEventListener('click', () => graphs.cursors.clear());
+
+  // ---- mobile: signal drawer + Table/Graphs segmented control ----
+  const layout = document.querySelector('.analysis-layout');
+  const split = document.querySelector('.analysis-split');
+  const openDrawer = () => layout.classList.add('drawer-open');
+  const closeDrawer = () => layout.classList.remove('drawer-open');
+  document.getElementById('drawer-toggle').addEventListener('click', openDrawer);
+  document.getElementById('signal-drawer-close').addEventListener('click', closeDrawer);
+  document.getElementById('signal-drawer-backdrop').addEventListener('click', closeDrawer);
+  for (const b of document.querySelectorAll('#analysis-segmented button')) {
+    b.addEventListener('click', () => {
+      for (const x of document.querySelectorAll('#analysis-segmented button')) x.classList.toggle('active', x === b);
+      split.classList.toggle('show-table', b.dataset.seg === 'table');
+      split.classList.toggle('show-graphs', b.dataset.seg === 'graphs');
+      requestAnimationFrame(() => graphs.resizeAll());
+    });
+  }
 
   // ---- events ----
   app.bus.on('dbc:changed', () => {
