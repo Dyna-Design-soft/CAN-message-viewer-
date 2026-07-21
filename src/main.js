@@ -66,6 +66,14 @@ initLivePanel(app);
 
 window.__canApp = app; // debugging hook
 
+// Register the service worker so the viewer is installable (Chrome "Install app")
+// and works offline. Skipped for file:// (single-file build) where it can't run.
+if (location.protocol !== 'file:' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
 // First-run demo: auto-load sample DBC + log so graphs are visible immediately.
 if (app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
   loadDemo(app);

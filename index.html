@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CAN Message Viewer</title>
+<meta name="theme-color" content="#0b0e14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%234da3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3 12h3l2-7 4 14 3-10 2 3h4'/></svg>">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="src/graph/uplot.css">
@@ -107,6 +113,12 @@
             <option value="2">2×</option>
             <option value="10">10×</option>
           </select>
+          <span class="range-ctl" aria-label="Time window">
+            <label class="toolbar-field">From <input type="number" id="range-from" step="0.001" aria-label="Window start (s)" disabled></label>
+            <label class="toolbar-field">To <input type="number" id="range-to" step="0.001" aria-label="Window end (s)" disabled></label>
+            <button id="range-apply" class="btn" title="Zoom to this time window" disabled>Apply</button>
+            <button id="range-full" class="btn" title="Show the full log duration" disabled>Full</button>
+          </span>
           <span class="segmented" id="analysis-segmented" role="tablist" aria-label="Analysis view">
             <button data-seg="table" class="active">Table</button>
             <button data-seg="graphs">Graphs</button>

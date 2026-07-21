@@ -250,21 +250,32 @@ export class GraphManager {
     }
   }
 
-  /** Reset the time axis to the full data range across all time-based graphs. */
-  resetZoom() {
+  /** Full data-time range across the selected signals, or null. */
+  fullXRange() {
     let lo = Infinity, hi = -Infinity;
     for (const q of this.selection) {
       const s = this.#series(q);
       if (s && s.t.length) { lo = Math.min(lo, s.t[0]); hi = Math.max(hi, s.t[s.t.length - 1]); }
     }
-    if (!isFinite(lo) || hi <= lo) return;
+    return isFinite(lo) && hi > lo ? { min: lo, max: hi } : null;
+  }
+
+  /** Set the time axis on all time-based graphs (split/overlay). */
+  setXRange(min, max) {
     this.#syncingScale = true;
     for (const g of this.graphs) {
       if (g.role === 'xy') continue;
       const us = g.panes ? g.panes.map((p) => p.uplot) : g.uplot ? [g.uplot] : [];
-      for (const u of us) u.setScale('x', { min: lo, max: hi });
+      for (const u of us) u.setScale('x', { min, max });
     }
     this.#syncingScale = false;
+    this.app.bus.emit('graph:xrange', { min, max });
+  }
+
+  /** Reset the time axis to the full data range. */
+  resetZoom() {
+    const r = this.fullXRange();
+    if (r) this.setXRange(r.min, r.max);
   }
 
   // ---- primary graph (auto-follows selection) ----
@@ -338,6 +349,7 @@ export class GraphManager {
           if (other !== u) other.setScale('x', { min, max });
         }
         this.#syncingScale = false;
+        this.app.bus.emit('graph:xrange', { min, max });
       },
     ];
   }

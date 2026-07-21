@@ -301,6 +301,8 @@ label { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .playback-bar .btn { min-width: var(--tap); min-height: 38px; }
 #pb-time { min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
 .drawer-toggle { display: none; }
+.range-ctl { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.range-ctl input[type="number"] { width: 78px; font-variant-numeric: tabular-nums; }
 
 .analysis-split { flex: 1; display: flex; min-height: 0; }
 .analysis-table-area {

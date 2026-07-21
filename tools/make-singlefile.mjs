@@ -49,7 +49,10 @@ html = html
   .replace(/\s*<link rel="stylesheet" href="css\/app\.css">/, '')
   .replace(/\s*<link rel="stylesheet" href="src\/graph\/uplot\.css">/, '')
   .replace(/\s*<script src="src\/graph\/uplot\.min\.js"><\/script>/, '')
-  .replace(/\s*<script type="module" src="src\/main\.js"><\/script>/, '');
+  .replace(/\s*<script type="module" src="src\/main\.js"><\/script>/, '')
+  // PWA-only tags make no sense in a standalone file:// bundle
+  .replace(/\s*<link rel="manifest"[^>]*>/, '')
+  .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '');
 
 // 4. Inline styles into <head> and scripts before </body>.
 // NOTE: use function replacers — the JS/CSS contain `$` sequences (e.g. `$\``

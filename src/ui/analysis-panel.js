@@ -254,6 +254,41 @@ export function initAnalysisPanel(app) {
     });
   }
 
+  // ---- time-window control (Full / From–To) ----
+  const rFrom = document.getElementById('range-from');
+  const rTo = document.getElementById('range-to');
+  const rApply = document.getElementById('range-apply');
+  const rFull = document.getElementById('range-full');
+  let fullMin = 0, fullMax = 0;
+  const fmtT = (v) => (Math.round(v * 1000) / 1000).toString();
+  function setRangeEnabled(on) { [rFrom, rTo, rApply, rFull].forEach((e) => (e.disabled = !on)); }
+  function applyRange() {
+    let from = Number(rFrom.value), to = Number(rTo.value);
+    if (Number.isNaN(from) || Number.isNaN(to)) return;
+    if (to < from) { const t = from; from = to; to = t; }
+    from = Math.max(fullMin, from);
+    to = Math.min(fullMax, to);
+    if (to - from < 1e-6) return;
+    graphs.setXRange(from, to);
+    playback.setRange(from, to);
+    if (playback.time < from || playback.time > to) playback.setTime(from);
+    rFrom.value = fmtT(from); rTo.value = fmtT(to);
+  }
+  function fullRange() {
+    graphs.resetZoom();
+    playback.setRange(fullMin, fullMax);
+    rFrom.value = fmtT(fullMin); rTo.value = fmtT(fullMax);
+  }
+  rApply.addEventListener('click', applyRange);
+  rFull.addEventListener('click', fullRange);
+  for (const el of [rFrom, rTo]) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyRange(); });
+  // reflect drag-zoom in the inputs
+  app.bus.on('graph:xrange', ({ min, max }) => {
+    if (document.activeElement !== rFrom && document.activeElement !== rTo) {
+      rFrom.value = fmtT(min); rTo.value = fmtT(max);
+    }
+  });
+
   // ---- events ----
   app.bus.on('dbc:changed', () => {
     renderTree();
@@ -262,11 +297,17 @@ export function initAnalysisPanel(app) {
   app.bus.on('log:loaded', ({ stats }) => {
     playback.setRange(stats.tFirst, stats.tLast);
     playback.setTime(stats.tFirst);
+    fullMin = stats.tFirst; fullMax = stats.tLast;
+    rFrom.value = fmtT(fullMin); rTo.value = fmtT(fullMax);
+    setRangeEnabled(true);
     graphs.rebuild();
     renderTable();
   });
   app.bus.on('log:cleared', () => {
     playback.setRange(0, 0);
+    fullMin = fullMax = 0;
+    rFrom.value = ''; rTo.value = '';
+    setRangeEnabled(false);
     graphs.rebuild();
     renderTable();
   });
