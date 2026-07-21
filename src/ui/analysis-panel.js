@@ -202,6 +202,8 @@ export function initAnalysisPanel(app) {
   document.getElementById('cursor-add').addEventListener('click', () => graphs.addCursor());
   document.getElementById('cursor-clear').addEventListener('click', () => graphs.cursors.clear());
   document.getElementById('graph-reset').addEventListener('click', () => graphs.resetZoom());
+  document.getElementById('zoom-in').addEventListener('click', () => graphs.zoomBy(1 / 1.6));
+  document.getElementById('zoom-out').addEventListener('click', () => graphs.zoomBy(1.6));
 
   // Arrow keys nudge the active cursor (Shift = coarse). Ignored while typing.
   document.addEventListener('keydown', (e) => {

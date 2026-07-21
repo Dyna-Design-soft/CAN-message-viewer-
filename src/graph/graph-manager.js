@@ -278,6 +278,62 @@ export class GraphManager {
     if (r) this.setXRange(r.min, r.max);
   }
 
+  /** Current time axis [min,max] from the first time-based plot, or null. */
+  #currentXRange() {
+    const u = this.#firstTimeUplot();
+    if (!u || u.scales.x.min == null) return null;
+    return { min: u.scales.x.min, max: u.scales.x.max };
+  }
+
+  /** Set the X range, clamped to the data extent with a sensible minimum span. */
+  #zoomTo(min, max) {
+    const full = this.fullXRange();
+    if (!full) return;
+    if (min < full.min) min = full.min;
+    if (max > full.max) max = full.max;
+    const minSpan = Math.max((full.max - full.min) * 1e-4, 1e-4);
+    if (max - min < minSpan) return;
+    this.setXRange(min, max);
+  }
+
+  /** Zoom about a center point by a factor (>1 zooms out, <1 zooms in). */
+  zoomBy(factor, centerVal) {
+    const cur = this.#currentXRange();
+    if (!cur) return;
+    const c = centerVal == null ? (cur.min + cur.max) / 2 : centerVal;
+    this.#zoomTo(c - (c - cur.min) * factor, c + (cur.max - c) * factor);
+  }
+
+  /** Pan the time axis by a fraction of the visible span (dir -1 left / +1 right). */
+  panBy(dirFraction) {
+    const cur = this.#currentXRange();
+    if (!cur) return;
+    const shift = (cur.max - cur.min) * dirFraction;
+    this.#zoomTo(cur.min + shift, cur.max + shift);
+  }
+
+  /** Mouse-wheel zoom (about pointer) / shift-wheel pan on the time axis. */
+  #wheelPlugin() {
+    const mgr = this;
+    return {
+      hooks: {
+        ready(u) {
+          u.over.addEventListener('wheel', (e) => {
+            if (u.scales.x.min == null) return;
+            e.preventDefault();
+            if (e.shiftKey) {
+              mgr.panBy((e.deltaY > 0 ? 0.15 : -0.15));
+            } else {
+              const rect = u.over.getBoundingClientRect();
+              const val = u.posToVal(e.clientX - rect.left, 'x');
+              mgr.zoomBy(e.deltaY > 0 ? 1.25 : 1 / 1.25, val);
+            }
+          }, { passive: false });
+        },
+      },
+    };
+  }
+
   // ---- primary graph (auto-follows selection) ----
 
   #syncPrimary() {
@@ -363,7 +419,7 @@ export class GraphManager {
         drag: { x: true, y: false, dist: 6 }, // rubber-band zoom on the time axis
       },
       legend: { show: false },
-      plugins: [cursorPlugin(this.cursors, () => this.#onCursorMoved())],
+      plugins: [cursorPlugin(this.cursors, () => this.#onCursorMoved()), this.#wheelPlugin()],
       hooks: {
         setScale: this.#xSyncHook(),
         setCursor: [(u) => this.#onHover(u)],
