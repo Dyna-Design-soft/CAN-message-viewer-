@@ -1,8 +1,14 @@
 // Service worker: makes the viewer an installable, offline-capable PWA.
-// Strategy: precache the app shell on install; cache-first at runtime so every
-// module/asset fetched on the first online load is available offline afterward.
+//
+// Strategy: NETWORK-FIRST for same-origin GETs, falling back to the cache when
+// offline. Cache-first was a trap here — because the app is many ES modules
+// cached incrementally, a deploy left returning users with a version-skewed
+// bundle (old index.html + newly-fetched JS), which broke the app. Network-first
+// always serves a consistent fresh set when online and still works offline from
+// the last cached copy. Bump CACHE on shape changes so activate() purges stale
+// caches.
 
-const CACHE = 'canviewer-v1';
+const CACHE = 'canviewer-v2';
 const CORE = [
   './',
   './index.html',
@@ -34,14 +40,14 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  // Network-first: fetch fresh, update the cache, fall back to cache offline.
   e.respondWith(
-    caches.match(req).then((hit) =>
-      hit ||
-      fetch(req).then((resp) => {
+    fetch(req)
+      .then((resp) => {
         const clone = resp.clone();
         caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {});
         return resp;
-      }).catch(() => caches.match('./index.html')),
-    ),
+      })
+      .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html'))),
   );
 });

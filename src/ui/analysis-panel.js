@@ -204,7 +204,7 @@ export function initAnalysisPanel(app) {
   document.getElementById('graph-reset').addEventListener('click', () => graphs.resetZoom());
   document.getElementById('zoom-in').addEventListener('click', () => graphs.zoomBy(1 / 1.6));
   document.getElementById('zoom-out').addEventListener('click', () => graphs.zoomBy(1.6));
-  document.getElementById('graph-export-csv').addEventListener('click', exportCsv);
+  document.getElementById('graph-export-csv')?.addEventListener('click', exportCsv);
 
   // ---- CSV export of the selected signals over the current time window ----
   function exportCsv() {
