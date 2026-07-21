@@ -53,6 +53,32 @@ webview.CoreWebView2.SetVirtualHostNameToFolderMapping(
 webview.CoreWebView2.Navigate("https://canviewer.local/index.html");
 ```
 
+## Deploying to Render
+
+The app is a static site (no server, no runtime backend), so it deploys as a
+Render **Static Site**. Serving over HTTPS is also what enables the PWA install
+prompt and the offline service worker.
+
+A Blueprint (`render.yaml`) is included, so the whole thing is one click:
+
+1. In the [Render dashboard](https://dashboard.render.com): **New → Blueprint**.
+2. Connect this GitHub repo and select it. Render reads `render.yaml` and
+   creates a static site named `can-message-viewer` — no build command, publish
+   path `.`.
+3. Click **Apply**. When the deploy finishes, the app is live at
+   `https://can-message-viewer.onrender.com` (or your chosen name).
+
+Notes:
+- `render.yaml` deploys the `claude/can-message-viewer-hxuzmc` branch. After you
+  merge to your default branch, change the `branch:` field (or set it in the
+  dashboard) so pushes there redeploy automatically.
+- No environment variables or secrets are needed — the viewer makes no
+  cross-origin or runtime network calls.
+- To deploy without the Blueprint: **New → Static Site**, pick the repo, leave
+  **Build Command** blank, set **Publish Directory** to `.`.
+- On a phone, open the deployed HTTPS URL in Chrome (Android) → **Install app**,
+  or Safari (iOS) → Share → **Add to Home Screen**.
+
 ## WebView2 live protocol
 
 The viewer and host exchange JSON objects, each with a `type` field. The host uses

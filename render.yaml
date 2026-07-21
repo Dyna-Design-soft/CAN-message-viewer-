@@ -1,0 +1,35 @@
+# Render Blueprint — deploys the CAN Message Viewer as a static site.
+# The app is pure HTML/CSS/ES-modules (no server, no runtime backend), so it is
+# served straight from the repo root over HTTPS. HTTPS is what lets the PWA
+# install and the service worker (offline caching) work.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and creates the static site automatically.
+services:
+  - type: web
+    name: can-message-viewer
+    runtime: static
+    # Deploy the branch that holds the code. Change to your default branch
+    # (e.g. main) after merging, or set it in the dashboard.
+    branch: claude/can-message-viewer-hxuzmc
+    # No build step: the app runs the ES modules as-is.
+    buildCommand: "echo 'static site — no build step'"
+    # Publish the repo root: index.html + css/ + src/ + icons/ + manifest + sw.js
+    # all resolve relative to here.
+    staticPublishPath: .
+    pullRequestPreviewsEnabled: false
+    headers:
+      # Never let a stale service worker pin an old build; sw.js must revalidate.
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /manifest.webmanifest
+        name: Cache-Control
+        value: no-cache
+      # Basic hardening; the app makes no cross-origin or runtime network calls.
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
