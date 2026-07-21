@@ -9,6 +9,7 @@ import './asc-reader.js';
 import './blf-reader.js';
 import './csv-writer.js';
 import './tdms-reader.js';
+import './mdf-reader.js';
 
 self.onmessage = async (e) => {
   const { file } = e.data;

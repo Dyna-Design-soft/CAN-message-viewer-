@@ -1,7 +1,7 @@
 // Analysis panel: signal tree (checkboxes) -> value table + graph stack,
 // with a scrubbing playback clock and synchronized cursors.
 
-import { GraphManager, valueAt } from '../graph/graph-manager.js';
+import { GraphManager, valueAt, buildAligned } from '../graph/graph-manager.js';
 import { formatId } from '../util/hex.js';
 import { decodeMessage, valueLabel } from '../core/decoder.js';
 
@@ -204,6 +204,34 @@ export function initAnalysisPanel(app) {
   document.getElementById('graph-reset').addEventListener('click', () => graphs.resetZoom());
   document.getElementById('zoom-in').addEventListener('click', () => graphs.zoomBy(1 / 1.6));
   document.getElementById('zoom-out').addEventListener('click', () => graphs.zoomBy(1.6));
+  document.getElementById('graph-export-csv').addEventListener('click', exportCsv);
+
+  // ---- CSV export of the selected signals over the current time window ----
+  function exportCsv() {
+    const qs = [...app.selection];
+    if (qs.length === 0) { alert('Tick one or more signals to export.'); return; }
+    const cols = qs.map((q) => ({ q, sig: app.dbc.signalByQualifiedName(q), series: app.seriesCache.get(q, 'log') }))
+      .filter((c) => c.series && c.series.t.length);
+    if (cols.length === 0) { alert('The selected signals have no samples to export.'); return; }
+
+    const from = playback.tMin, to = playback.tMax;
+    // Union time axis (sample-and-hold), then clip to the window.
+    const { xs, cols: values } = buildAligned(cols.map((c) => c.series));
+    const rows = [];
+    for (let i = 0; i < xs.length; i++) {
+      if (xs[i] < from || xs[i] > to) continue;
+      const row = [xs[i].toFixed(6)];
+      for (let c = 0; c < cols.length; c++) {
+        const v = values[c][i];
+        row.push(Number.isFinite(v) ? String(v) : '');
+      }
+      rows.push(row.join(','));
+    }
+    const header = ['time_s', ...cols.map((c) => csvField(c.sig?.unit ? `${short(c.q)} [${c.sig.unit}]` : short(c.q)))];
+    const csv = header.join(',') + '\n' + rows.join('\n') + '\n';
+    const base = (app.logFileName || 'analysis').replace(/\.[^.]+$/, '');
+    downloadText(`${base}_signals.csv`, csv);
+  }
 
   // Arrow keys nudge the active cursor (Shift = coarse). Ignored while typing.
   document.addEventListener('keydown', (e) => {
@@ -419,6 +447,23 @@ function cells(tr, values) {
 }
 function sigLabel(sig) {
   return sig ? sig.name : '?';
+}
+function short(qname) {
+  return qname.split('/').slice(1).join('.');
+}
+function csvField(s) {
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function fmt(v) {
   if (v == null || !isFinite(v)) return '—';

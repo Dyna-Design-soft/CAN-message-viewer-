@@ -240,7 +240,7 @@ export class GraphManager {
           let v;
           if (rt != null) v = valueAt(ent.series, rt);
           else v = ent.series.v.length ? ent.series.v[ent.series.v.length - 1] : null;
-          ent.valueEl.textContent = v == null ? '—' : fmtVal(v);
+          ent.valueEl.textContent = v == null ? '—' : fmtValLbl(ent.series.signal, v);
         }
       }
     }
@@ -520,9 +520,19 @@ export class GraphManager {
         series.push({
           label: shortName(s.q), stroke: color, width: 1.6, scale: scaleKey,
           spanGaps: false, paths: stepped, points: { show: false },
-          value: (u, v) => (v == null ? '—' : fmtVal(v)),
+          value: (u, v) => (v == null ? '—' : fmtValLbl(s.series.signal, v)),
         });
       });
+
+      // A track showing a single enum/state signal gets state names on its Y
+      // axis instead of raw numbers (the CANape "digital signal" look).
+      if (sigs.length === 1 && sigs[0].series.signal.valueTable) {
+        const sig0 = sigs[0].series.signal;
+        const yax = axes[1];
+        yax.values = (u, splits) => splits.map((sp) => enumLabel(sig0, sp) ?? fmtVal(sp));
+        yax.size = 96;
+        yax.incrs = [sig0.factor || 1, 2 * (sig0.factor || 1), 5 * (sig0.factor || 1), 10 * (sig0.factor || 1)];
+      }
 
       pane.append(legend, plotEl);
       g.body.appendChild(pane);
@@ -591,6 +601,7 @@ export class GraphManager {
     arr.splice(Math.max(0, Math.min(dest, arr.length)), 0, moved);
     this.#syncPrimary();
     requestAnimationFrame(() => this.resizeAll());
+    this.app.bus.emit('graph:layout');
   }
 
   /** Remove one signal from its track (and deselect it). */
@@ -651,7 +662,7 @@ export class GraphManager {
         spanGaps: false,
         paths: stepped,
         points: { show: false },
-        value: (u, v) => (v == null ? '—' : fmtVal(v)),
+        value: (u, v) => (v == null ? '—' : fmtValLbl(s.series.signal, v)),
       });
     });
     const plotEl = this.#mountResizable(g, 300);
@@ -801,9 +812,10 @@ export class GraphManager {
     const tb = document.createElement('tbody');
     for (const q of sel) {
       const series = this.#series(q);
+      const sig = series?.signal;
       const cells = [shortName(q)];
       const vals = times.map((tt) => valueAt(series, tt));
-      cells.push(...vals.map((v) => (v == null ? '—' : fmtVal(v))));
+      cells.push(...vals.map((v) => (v == null ? '—' : fmtValLbl(sig, v))));
       if (region) {
         const d = vals[1] != null && vals[0] != null ? vals[1] - vals[0] : null;
         cells.push(d == null ? '—' : fmtVal(d));
@@ -885,6 +897,19 @@ function fmtVal(v) {
   if (!isFinite(v)) return '—';
   if (Number.isInteger(v)) return String(v);
   return (+v.toPrecision(6)).toString();
+}
+
+/** VAL_ enum/state label for a physical value, or null if none applies. */
+function enumLabel(signal, v) {
+  if (!signal || !signal.valueTable || v == null || !isFinite(v)) return null;
+  const raw = Math.round((v - signal.offset) / signal.factor);
+  return signal.valueTable.get(raw) ?? null;
+}
+
+/** Format a value, preferring its enum/state label (e.g. "Active" not "2"). */
+function fmtValLbl(signal, v) {
+  const lbl = enumLabel(signal, v);
+  return lbl != null ? lbl : fmtVal(v);
 }
 
 function empty(el, msg) {

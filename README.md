@@ -3,7 +3,7 @@
 A browser-based CAN / CAN FD message viewer. Pure HTML/CSS/JavaScript — no build
 step, no runtime internet dependency. It runs two ways:
 
-- **Offline** — open recorded CAN log files (ASC, BLF, TDMS, CSV) for analysis.
+- **Offline** — open recorded CAN log files (ASC, BLF, TDMS, MF4/MDF, CSV) for analysis.
 - **Online (live)** — embedded in a Windows host application through a **WebView2**
   control; the host streams CAN frames as JSON and the viewer displays and records
   them. A built-in **simulator** lets you exercise live mode in a plain browser.
@@ -29,7 +29,10 @@ The app is a single page with three tabs plus a DBC manager:
   update interval). Add stacked **trend graphs** (auto-grouped onto multiple Y axes
   by unit) and **XY graphs**; zoom/pan is synchronized across the stack. Create
   **cursors** that move together on every graph, with a per-signal readout and a
-  two-cursor delta.
+  two-cursor delta. Boolean/enum signals render sample-and-hold with their `VAL_`
+  state names (on the Y axis and in readouts). **Export CSV** dumps the selected
+  signals over the current time window for Excel/MATLAB. The loaded DBC, signal
+  selection, track layout, graph mode and active tab persist across reloads.
 - **Live** — pick the source (host application or simulator), Start/Stop, and view
   incoming traffic as a **frame grid** (row per ID), **decoded signals**, a scrolling
   **trend**, or a **trace list**. **Record** to ASC, CSV, or BLF; recordings re-open
@@ -129,7 +132,7 @@ frames. `seq` is a monotonic counter so the viewer can detect gaps.
 index.html            app shell (tabs, DBC modal)
 css/app.css
 src/core/             FrameStore, DBC model/parser, decoder, signal series, channel map
-src/io/               format registry, ASC/BLF/TDMS/CSV readers, ASC/BLF/CSV writers, parse worker
+src/io/               format registry, ASC/BLF/TDMS/MF4/CSV readers, ASC/BLF/CSV writers, parse worker
 src/live/             WebView2 bridge, simulator, ingest, recorder
 src/graph/            uPlot (vendored), graph manager, cursor plugin
 src/ui/               DBC modal, log/analysis/live panels
@@ -151,8 +154,13 @@ node test/run-node.mjs           # headless: decoder/parser/round-trip/mapping
   Self-round-trip is verified; validate against a Vector capture if exact CANoe
   fidelity is required.
 - **TDMS** — generic segments/metadata + contiguous raw data, with an NI-XNET
-  per-field CAN channel mapper. Interleaved and DAQmx raw data are not supported. If
-  the channel layout is not recognized, the error lists the channel names so the
-  mapper can be extended for your capture.
+  mapper. Recognizes the NI-XNET raw-frame stream (single byte channel with
+  `NI_network_*` properties; payload padded to an 8-byte boundary) and a per-field
+  channel layout. Interleaved and DAQmx raw data are not supported.
+- **MF4 (ASAM MDF v4)** — reads CAN bus-logging files: channel groups whose
+  channels follow the standard `CAN_DataFrame` / `CAN_ErrorFrame` naming. Supports
+  sorted and unsorted data groups and uncompressed (`##DT`), compressed (`##DZ`,
+  deflate incl. transposed) and block-list (`##DL`/`##HL`) data. Generic (non-bus)
+  signal MDF, array/VLSD channels and MDF3 are out of scope.
 - **DBC** — simple `m<N>` multiplexing is decoded; extended multiplexing
   (`SG_MUL_VAL_`) is parsed with a warning but not decoded.

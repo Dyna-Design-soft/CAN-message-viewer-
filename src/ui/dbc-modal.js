@@ -11,7 +11,9 @@ export function initDbcModal(app) {
   fileInput.addEventListener('change', async () => {
     for (const file of fileInput.files) {
       const text = await file.text();
-      app.dbc.add(parseDbc(text, file.name));
+      const cluster = parseDbc(text, file.name);
+      cluster.source = text; // kept so the DBC can be persisted across reloads
+      app.dbc.add(cluster);
     }
     fileInput.value = '';
     app.bus.emit('dbc:changed', { clusters: app.dbc.clusters });

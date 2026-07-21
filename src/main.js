@@ -10,6 +10,7 @@ import { initLogPanel } from './ui/log-panel.js';
 import { initAnalysisPanel } from './ui/analysis-panel.js';
 import { initLivePanel } from './ui/live-panel.js';
 import { loadDemo } from './demo.js';
+import { initPersistence, loadPersisted, restore } from './core/persistence.js';
 
 const app = {
   bus,
@@ -74,7 +75,11 @@ if (location.protocol !== 'file:' && 'serviceWorker' in navigator) {
   });
 }
 
-// First-run demo: auto-load sample DBC + log so graphs are visible immediately.
-if (app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
+// Restore the previous session (DBCs, selection, track layout, tab) if any.
+// Log files aren't persisted, so the user re-opens the log; everything else
+// comes back. Only when there's nothing saved do we seed the first-run demo.
+const restored = restore(app, loadPersisted());
+if (!restored && app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
   loadDemo(app);
 }
+initPersistence(app);

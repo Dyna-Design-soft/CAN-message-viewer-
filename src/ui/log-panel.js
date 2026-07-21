@@ -6,6 +6,7 @@ import '../io/asc-reader.js';
 import '../io/blf-reader.js';
 import '../io/csv-writer.js';
 import '../io/tdms-reader.js';
+import '../io/mdf-reader.js';
 import { formatId } from '../util/hex.js';
 import { formatDuration, formatEpoch } from '../util/time.js';
 

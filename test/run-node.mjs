@@ -5,6 +5,7 @@ import './asc-reader.test.js';
 import './blf.test.js';
 import './asc-writer.test.js';
 import './tdms.test.js';
+import './mdf.test.js';
 import { runAll, summarize } from './test-runner.js';
 
 const results = await runAll();
