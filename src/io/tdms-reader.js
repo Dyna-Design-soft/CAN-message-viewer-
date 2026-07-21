@@ -5,14 +5,13 @@
 //     producing named channels with typed-array data. Handles incremental
 //     metadata (kTocNewObjList), the standard numeric types, strings and
 //     NI timestamps. Interleaved and DAQmx raw data are not supported.
-//  2. An NI-XNET mapper that recognizes CAN frame channels by name and builds
-//     a FrameStore.
-//
-// NI-XNET frame logging has more than one on-disk representation depending on
-// the logging configuration. This mapper handles the common per-field channel
-// layout (Timestamp / Identifier / Extended / DLC / payload bytes). If it does
-// not recognize the channels, it throws an error listing the channel names so
-// the layout can be added — validate against a real capture.
+//  2. An NI-XNET mapper that builds a FrameStore. NI-XNET logs CAN to a single
+//     u8 "raw frame" channel (identified by NI_network_* properties): a byte
+//     stream of 24-byte-ish records — u64 timestamp (100 ns FILETIME), u32
+//     identifier (bit 29 = extended), type, flags, info, payloadLen, payload.
+//     A per-field channel layout (Timestamp/Identifier/DLC/bytes…) is also
+//     supported as a fallback. If neither matches, an error lists the channel
+//     names so the layout can be added — validated against a real capture.
 
 import { BinaryReader } from '../util/binary.js';
 import { FrameStore, FrameFlags } from '../core/frame-store.js';
@@ -224,8 +223,48 @@ function splitPath(path) {
 
 // ---- NI-XNET CAN mapper ----
 
+const FILETIME_UNIX_OFFSET = 11644473600; // seconds between 1601-01-01 and 1970-01-01
+const NIX_ID_MASK = 0x1fffffff;
+const NIX_EXT_FLAG = 0x20000000;
+
+/**
+ * Decode an NI-XNET raw-frame byte stream (one u8 channel) into a FrameStore.
+ * Record: u64 timestamp(100ns FILETIME) | u32 id(bit29=ext) | u8 type | u8 flags
+ * | u8 info | u8 payloadLen | payload[payloadLen] padded to a multiple of 8
+ * bytes so the following record stays 8-byte aligned. The header is already
+ * 16 bytes (a multiple of 8), so the whole record is `16 + ceil(plen/8)*8`.
+ */
+export function decodeNixnetFrames(bytes) {
+  const store = new FrameStore();
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const n = bytes.length;
+  let pos = 0;
+  let t0 = null;
+  while (pos + 16 <= n) {
+    const ticks = Number(dv.getBigUint64(pos, true));
+    const idRaw = dv.getUint32(pos + 8, true);
+    const plen = bytes[pos + 15];
+    const step = 16 + Math.ceil(plen / 8) * 8; // payload padded to 8-byte boundary
+    if (pos + step > n) break;
+    const sec = ticks / 1e7; // 100 ns ticks → seconds (since 1601)
+    if (t0 === null) { t0 = sec; store.t0Epoch = sec - FILETIME_UNIX_OFFSET; }
+    const data = bytes.subarray(pos + 16, pos + 16 + Math.min(plen, 64));
+    // CAN classic caps at 8 data bytes; anything longer is a CAN FD frame.
+    const flags = plen > 8 ? FrameFlags.FD : 0;
+    store.add(sec - t0, idRaw & NIX_ID_MASK, !!(idRaw & NIX_EXT_FLAG), 1, flags, data);
+    pos += step;
+  }
+  return store;
+}
+
 export function tdmsToFrameStore(channels) {
   const chans = [...channels.values()].filter((c) => c.data && c.data.length !== undefined);
+
+  // NI-XNET raw-frame stream: a byte channel carrying NI_network_* properties.
+  const nixnet = chans.find(
+    (c) => c.data.length && Object.keys(c).some((k) => k.startsWith('prop:NI_network')),
+  );
+  if (nixnet) return decodeNixnetFrames(nixnet.data);
   const find = (...names) =>
     chans.find((c) => names.some((n) => c.name.toLowerCase().replace(/[\s_]/g, '').includes(n)));
 
