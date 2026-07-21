@@ -1,0 +1,36 @@
+name: Deploy PWA to GitHub Pages
+
+# Publishes the CAN Message Viewer (static PWA) so it can be installed on phones.
+# One-time setup by a repo admin: Settings → Pages → Source = "GitHub Actions".
+# If the github-pages environment blocks non-default branches, allow this branch
+# in the environment's deployment protection rules (or merge to the default branch).
+
+on:
+  push:
+    branches: [claude/can-message-viewer-hxuzmc]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
