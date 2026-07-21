@@ -370,6 +370,13 @@ label { display: inline-flex; align-items: center; gap: var(--sp-2); }
   border-bottom: 1px solid var(--border); font-family: var(--mono);
 }
 
+/* drag-to-zoom selection box (overrides uplot.css's default, which is a 7%
+   black fill — invisible against this dark theme) */
+.uplot .u-select {
+  background: rgba(77, 163, 255, 0.18);
+  border: 1px solid var(--accent);
+}
+
 /* drag & drop of signals onto tracks */
 .split-pane.drop-hover { outline: 2px solid var(--accent); outline-offset: -2px; }
 .track-dropzone {
