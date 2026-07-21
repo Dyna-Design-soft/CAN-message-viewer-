@@ -28,6 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        # Auto-enable Pages (Source = GitHub Actions) via the API so no manual
+        # repo-settings step is needed. Requires the pages:write permission above.
+        with:
+          enablement: true
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
