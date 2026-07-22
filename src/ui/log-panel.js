@@ -9,6 +9,8 @@ import '../io/tdms-reader.js';
 import '../io/mdf-reader.js';
 import { formatId } from '../util/hex.js';
 import { formatDuration, formatEpoch } from '../util/time.js';
+import { extractRange, extractSnapshot, serializeFrames } from '../io/frame-export.js';
+import { downloadBlob } from '../live/recorder.js';
 
 export function initLogPanel(app) {
   const drop = document.getElementById('log-drop');
@@ -136,4 +138,70 @@ export function initLogPanel(app) {
       render(app.logFileName, app.logFormat, app.logStats);
     }
   });
+
+  initExport(app);
+}
+
+// ---- extract & export a subset of the loaded log ----
+function initExport(app) {
+  const modeGroup = document.getElementById('extract-mode');
+  const rangeFields = document.getElementById('extract-range-fields');
+  const snapFields = document.getElementById('extract-snapshot-fields');
+  const fromEl = document.getElementById('extract-from');
+  const toEl = document.getElementById('extract-to');
+  const atEl = document.getElementById('extract-at');
+  const formatEl = document.getElementById('extract-format');
+  const exportBtn = document.getElementById('extract-export');
+  const statusEl = document.getElementById('extract-status');
+  if (!modeGroup || !exportBtn) return;
+
+  let mode = 'range';
+  for (const b of modeGroup.querySelectorAll('button')) {
+    b.addEventListener('click', () => {
+      mode = b.dataset.mode;
+      for (const x of modeGroup.querySelectorAll('button')) x.classList.toggle('is-active', x === b);
+      rangeFields.hidden = mode !== 'range';
+      snapFields.hidden = mode !== 'snapshot';
+    });
+  }
+
+  // Default the time fields to the loaded log's extent.
+  app.bus.on('log:loaded', ({ stats }) => {
+    const a = round3(stats.tFirst), b = round3(stats.tLast);
+    fromEl.value = a; toEl.value = b; atEl.value = b;
+    statusEl.textContent = '';
+  });
+
+  exportBtn.addEventListener('click', async () => {
+    if (!app.logStore || app.logStore.isEmpty) { statusEl.textContent = 'No log loaded.'; return; }
+    const format = formatEl.value;
+    let subset, label;
+    if (mode === 'snapshot') {
+      const t = Number(atEl.value);
+      if (Number.isNaN(t)) { statusEl.textContent = 'Enter a valid time.'; return; }
+      subset = extractSnapshot(app.logStore, t);
+      label = `snapshot @ ${round3(t)}s`;
+    } else {
+      const from = Number(fromEl.value), to = Number(toEl.value);
+      if (Number.isNaN(from) || Number.isNaN(to)) { statusEl.textContent = 'Enter valid From/To times.'; return; }
+      subset = extractRange(app.logStore, from, to);
+      label = `${round3(Math.min(from, to))}–${round3(Math.max(from, to))}s`;
+    }
+    if (subset.isEmpty) { statusEl.textContent = 'No frames in that selection.'; return; }
+    statusEl.textContent = `Exporting ${subset.count.toLocaleString()} frame(s)…`;
+    try {
+      const { data, mime, ext } = await serializeFrames(subset, format);
+      const base = (app.logFileName || 'export').replace(/\.[^.]+$/, '');
+      const tag = mode === 'snapshot' ? 'snapshot' : 'range';
+      downloadBlob(new Blob([data], { type: mime }), `${base}_${tag}.${ext}`);
+      statusEl.textContent = `Exported ${subset.count.toLocaleString()} frame(s) (${label}) as ${ext.toUpperCase()}.`;
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'Export failed: ' + err.message;
+    }
+  });
+}
+
+function round3(v) {
+  return Math.round(v * 1000) / 1000;
 }

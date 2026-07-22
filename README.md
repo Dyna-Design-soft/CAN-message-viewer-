@@ -28,7 +28,9 @@ The app is a single page with three tabs plus a DBC manager:
 - **Log File** — drag-and-drop or browse to open a log. Shows duration, frame count
   and rate, unique IDs, channels, CAN FD and error-frame counts, plus per-ID counts,
   cycle time and rate. Parsing runs in a Web Worker so the UI stays responsive on
-  large files.
+  large files. **Extract & export** a subset — a **time range** (from→to) or a
+  **snapshot** (the latest frame of every ID at one instant) — to ASC, BLF, CSV or
+  TDMS.
 - **Analysis** — tick signals in the tree to add them to the value table and graphs.
   A playback clock (scrub slider, play/pause, speed) drives the table (configurable
   update interval). Add stacked **trend graphs** (auto-grouped onto multiple Y axes
@@ -137,7 +139,7 @@ frames. `seq` is a monotonic counter so the viewer can detect gaps.
 index.html            app shell (tabs, DBC modal)
 css/app.css
 src/core/             FrameStore, DBC model/parser, decoder, signal series, channel map
-src/io/               format registry, ASC/BLF/TDMS/MF4/CSV readers, ASC/BLF/CSV writers, parse worker
+src/io/               format registry, ASC/BLF/TDMS/MF4/CSV readers, ASC/BLF/CSV/TDMS writers, frame export, parse worker
 src/live/             WebView2 bridge, simulator, ingest, recorder
 src/graph/            uPlot (vendored), graph manager, cursor plugin
 src/ui/               DBC modal, log/analysis/live panels

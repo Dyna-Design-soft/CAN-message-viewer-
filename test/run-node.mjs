@@ -6,6 +6,7 @@ import './blf.test.js';
 import './asc-writer.test.js';
 import './tdms.test.js';
 import './mdf.test.js';
+import './frame-export.test.js';
 import { runAll, summarize } from './test-runner.js';
 
 const results = await runAll();

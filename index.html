@@ -81,6 +81,34 @@
           </div>
         </div>
         <div id="log-stats-cards" class="stat-cards"></div>
+
+        <div class="log-export" id="log-export">
+          <h3>Extract &amp; export frames</h3>
+          <div class="export-row">
+            <div class="toolbar-group" id="extract-mode" role="group" aria-label="Extract mode">
+              <button class="btn is-active" data-mode="range" title="Every frame within a time window">Time range</button>
+              <button class="btn" data-mode="snapshot" title="Latest frame of every ID at a single time">Snapshot</button>
+            </div>
+            <span class="export-fields" id="extract-range-fields">
+              From <input type="number" id="extract-from" step="0.001" inputmode="decimal"> s
+              To <input type="number" id="extract-to" step="0.001" inputmode="decimal"> s
+            </span>
+            <span class="export-fields" id="extract-snapshot-fields" hidden>
+              At <input type="number" id="extract-at" step="0.001" inputmode="decimal"> s
+            </span>
+            <label class="toolbar-field">Format
+              <select id="extract-format" aria-label="Export format">
+                <option value="asc">ASC</option>
+                <option value="blf">BLF</option>
+                <option value="csv">CSV</option>
+                <option value="tdms">TDMS</option>
+              </select>
+            </label>
+            <button id="extract-export" class="btn btn-accent">Export</button>
+            <span id="extract-status" class="muted small" aria-live="polite"></span>
+          </div>
+        </div>
+
         <h3>Frames per identifier</h3>
         <div class="table-scroll">
           <table class="data-table" id="log-perid-table">
