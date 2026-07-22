@@ -9,7 +9,7 @@
 // — those would surface as "no CAN frames found".
 
 import { BinaryReader, inflate } from '../util/binary.js';
-import { FrameStore, FrameFlags } from '../core/frame-store.js';
+import { FrameStore, FrameFlags, dlcToLength } from '../core/frame-store.js';
 import { registerFormat } from './format-registry.js';
 
 const TEXT = new TextDecoder();
@@ -174,7 +174,9 @@ function collectChannels(bytes, firstCn) {
 // Numeric field read from a record (byte-aligned little/big-endian ints & floats).
 function readField(rec, base, cn) {
   const off = base + cn.byteOffset;
-  const dv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength);
+  // Memoize one DataView per data block — a fresh one per field per record adds
+  // up to millions of allocations on a large log.
+  const dv = rec.__dv || (rec.__dv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength));
   const bits = cn.bitCount;
   const dt = cn.dataType;
   // IEEE float
@@ -185,7 +187,9 @@ function readField(rec, base, cn) {
   const nbytes = Math.ceil(bits / 8);
   let v = 0n;
   for (let i = 0; i < nbytes; i++) {
-    const b = BigInt(rec[off + (le ? i : nbytes - 1 - i)]);
+    // `?? 0` guards a read past the record end (undefined) so one malformed
+    // channel can't abort the whole file with a BigInt(undefined) TypeError.
+    const b = BigInt(rec[off + (le ? i : nbytes - 1 - i)] ?? 0);
     v |= b << BigInt(8 * i);
   }
   // mask to bit count and shift by intra-byte bit offset if any
@@ -346,11 +350,13 @@ function emitRecord(store, data, base, g) {
   if (can.brs && readField(rec, base, can.brs)) flags |= FrameFlags.BRS;
   if (can.esi && readField(rec, base, can.esi)) flags |= FrameFlags.ESI;
   if (can.dir && readField(rec, base, can.dir)) flags |= FrameFlags.TX;
+  const fd = (flags & FrameFlags.FD) !== 0;
 
-  // Actual payload length: DataLength if present, else DLC, else DataBytes width.
+  // Actual payload length: DataLength (real byte count) if present, else derive
+  // from DLC — which for CAN FD is a code (9..15 → 12..64), not a byte count.
   let len;
   if (can.dataLength) len = readField(rec, base, can.dataLength);
-  else if (can.dlc) len = readField(rec, base, can.dlc);
+  else if (can.dlc) len = dlcToLength(readField(rec, base, can.dlc), fd);
   else len = can.dataBytes ? can.dataBytes.bitCount / 8 : 0;
   len = Math.max(0, Math.min(64, len | 0));
 

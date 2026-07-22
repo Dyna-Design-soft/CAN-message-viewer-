@@ -10,7 +10,7 @@ import { initLogPanel } from './ui/log-panel.js';
 import { initAnalysisPanel } from './ui/analysis-panel.js';
 import { initLivePanel } from './ui/live-panel.js';
 import { loadDemo } from './demo.js';
-import { initPersistence, loadPersisted, restore } from './core/persistence.js';
+import { initPersistence, loadPersisted, restore, clearPersisted } from './core/persistence.js';
 
 const app = {
   bus,
@@ -78,7 +78,15 @@ if (location.protocol !== 'file:' && 'serviceWorker' in navigator) {
 // Restore the previous session (DBCs, selection, track layout, tab) if any.
 // Log files aren't persisted, so the user re-opens the log; everything else
 // comes back. Only when there's nothing saved do we seed the first-run demo.
-const restored = restore(app, loadPersisted());
+// A corrupt/incompatible saved state must never brick the app on every load,
+// so restore failures are swallowed and the bad state cleared.
+let restored = false;
+try {
+  restored = restore(app, loadPersisted());
+} catch (err) {
+  console.warn('Could not restore the previous session; starting fresh.', err);
+  clearPersisted();
+}
 if (!restored && app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
   loadDemo(app);
 }
