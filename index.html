@@ -37,6 +37,17 @@
   <!-- ======================= DBC PANEL ======================= -->
   <section id="panel-dbc" class="panel">
     <div class="dbc-layout">
+      <div class="workspace-bar" role="group" aria-label="Workspace">
+        <span class="ws-label">Workspace</span>
+        <select id="ws-select" aria-label="Current workspace"></select>
+        <button id="ws-new" class="btn" title="Create a new, empty workspace">New</button>
+        <button id="ws-rename" class="btn" title="Rename the current workspace">Rename</button>
+        <button id="ws-delete" class="btn" title="Delete the current workspace">Delete</button>
+        <span class="ws-spacer"></span>
+        <button id="ws-import" class="btn" title="Import a workspace from a .canws.json file">Import…</button>
+        <button id="ws-export" class="btn" title="Export the current workspace (DBC + setup, no log data)">Export</button>
+        <input type="file" id="ws-import-input" accept=".json,application/json" hidden>
+      </div>
       <div class="area-toolbar">
         <input type="file" id="dbc-file-input" accept=".dbc" multiple hidden>
         <button id="dbc-load" class="btn btn-accent">Load DBC file(s)…</button>

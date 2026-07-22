@@ -10,7 +10,7 @@ import { initLogPanel } from './ui/log-panel.js';
 import { initAnalysisPanel } from './ui/analysis-panel.js';
 import { initLivePanel } from './ui/live-panel.js';
 import { loadDemo } from './demo.js';
-import { initPersistence, loadPersisted, restore, clearPersisted } from './core/persistence.js';
+import { initWorkspaceBar } from './ui/workspace-bar.js';
 
 const app = {
   bus,
@@ -75,19 +75,16 @@ if (location.protocol !== 'file:' && 'serviceWorker' in navigator) {
   });
 }
 
-// Restore the previous session (DBCs, selection, track layout, tab) if any.
-// Log files aren't persisted, so the user re-opens the log; everything else
-// comes back. Only when there's nothing saved do we seed the first-run demo.
-// A corrupt/incompatible saved state must never brick the app on every load,
-// so restore failures are swallowed and the bad state cleared.
-let restored = false;
+// Workspaces own session persistence now: the current workspace restores its
+// DBCs + analysis setup (never the log data, which the user re-opens), and all
+// state changes auto-save back into it. Only when nothing was restored do we
+// seed the first-run demo.
+let restoredDbc = false;
 try {
-  restored = restore(app, loadPersisted());
+  ({ restoredDbc } = initWorkspaceBar(app));
 } catch (err) {
-  console.warn('Could not restore the previous session; starting fresh.', err);
-  clearPersisted();
+  console.warn('Workspace init failed; starting fresh.', err);
 }
-if (!restored && app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
+if (!restoredDbc && app.dbc.clusters.length === 0 && app.logStore.isEmpty) {
   loadDemo(app);
 }
-initPersistence(app);

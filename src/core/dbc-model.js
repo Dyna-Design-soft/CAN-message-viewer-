@@ -106,6 +106,11 @@ export class DbcRegistry {
     if (i >= 0) this.clusters.splice(i, 1);
   }
 
+  /** Unload every cluster (used when switching workspaces). */
+  clearAll() {
+    this.clusters = [];
+  }
+
   /** Resolve "cluster/message/signal" -> Signal or null. */
   signalByQualifiedName(qname) {
     const [cName, mName, sName] = qname.split('/');

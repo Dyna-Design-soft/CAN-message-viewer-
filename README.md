@@ -20,6 +20,11 @@ The app is a single page with three tabs plus a DBC manager:
   length, byte order, sign, factor/offset, min/max, default value, unit, value
   tables, receivers, comments). Files can be unloaded; parse errors are reported per
   line.
+- **Workspaces** — keep multiple named setups (DBCs + signal selection + track
+  layout + graph mode). Create/rename/delete/switch from the bar on the DBC tab;
+  the current workspace auto-saves. **Import/Export** a workspace as a
+  `.canws.json` file to share or back it up — the DBC source is included, the CAN
+  log data is not.
 - **Log File** — drag-and-drop or browse to open a log. Shows duration, frame count
   and rate, unique IDs, channels, CAN FD and error-frame counts, plus per-ID counts,
   cycle time and rate. Parsing runs in a Web Worker so the UI stays responsive on
