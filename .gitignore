@@ -7,3 +7,8 @@ test/fixtures/large.asc
 
 # npm (esbuild is a dev-only build dep)
 package-lock.json
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
