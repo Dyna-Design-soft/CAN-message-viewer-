@@ -29,6 +29,11 @@ python3 -m canviewer          # or:  python3 __main__.py
 Requires Python 3.9+. On a headless Linux box, install the Qt runtime libs
 (`libegl1 libgl1 libxkbcommon0`) or run with a display.
 
+**PyCharm:** you can also just press ▶ Run on `canviewer/app.py` — it adds the
+project root to `sys.path` itself, so both the Run button and `python -m
+canviewer` work. Point the run configuration's interpreter at a venv where
+`pip install -r requirements.txt` has been run.
+
 ## Layout
 
 ```
