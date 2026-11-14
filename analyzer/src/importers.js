@@ -8,10 +8,13 @@ import initSqlJs from 'sql.js/dist/sql-wasm.js';
 import sqlWasm from 'sql.js/dist/sql-wasm.wasm';
 import MDBReader from 'mdb-reader';
 import { Buffer } from 'buffer';
-import { parseTdmsChannels } from '../../src/io/tdms-reader.js';
+import { readTdms } from './tdms.js';
+import { parseNumericTable } from './fastcsv.js';
+import { state, compactFull, makeView, fullStats, rateInfo, fmtRate, fmtTime, windowByTime, exportWindowCsv } from './bigdata.js';
+import { installBar, refreshBar, setProgress } from './ui.js';
 
 const TIME_RE = /^(time|time[ _]?\(?s\)?|time_s|timestamp|datetime|date[ _]?time|date|seconds|sec|t|zeit|elapsed|elapsed[ _]?time|time[ _]?stamp)$/i;
-const ACCEPT = '.csv,.tsv,.txt,.dat,.log,.xlsx,.xlsm,.xlsb,.xls,.ods,.tdms,.mdb,.accdb,.db,.sqlite,.sqlite3,.db3,.sql,.json';
+const ACCEPT = '.csv,.tsv,.txt,.dat,.log,.lvm,.xlsx,.xlsm,.xlsb,.xls,.ods,.tdms,.mdb,.accdb,.db,.sqlite,.sqlite3,.db3,.sql,.json';
 
 // ---------- generic table -> dataset ----------
 function toNumber(v) {
@@ -46,19 +49,8 @@ export function tableToDataset(header, rows, name, kind) {
   const ncols = Math.max(header.length, ...rows.slice(0, 200).map((r) => r.length));
   header = Array.from({ length: ncols }, (_, i) => String(header[i] ?? '').trim() || `Channel ${i + 1}`);
   const sample = rows.length > 2000 ? rows.filter((_, i) => i % Math.ceil(rows.length / 2000) === 0) : rows;
-  const numericRatio = (i) => {
-    let ok = 0, n = 0;
-    for (const r of sample) { const v = r[i]; if (v === '' || v == null) continue; n++; if (Number.isFinite(toNumber(v))) ok++; }
-    return n ? ok / n : 0;
-  };
-  // time column: name match, or Date-typed / parseable datetime column
-  let timeCol = header.findIndex((h) => TIME_RE.test(h.replace(/\[.*?\]/g, '').trim()));
-  if (timeCol < 0) {
-    timeCol = header.findIndex((_, i) => {
-      const vals = sample.map((r) => r[i]).filter((v) => v !== '' && v != null);
-      return vals.length && vals.every((v) => v instanceof Date || (typeof v === 'string' && /\d[-/:]\d/.test(v) && Number.isFinite(toTime(v))));
-    });
-  }
+  const { timeCol: tc, inds } = detectColumns(header, sample);
+  let timeCol = tc;
   let t, sampleInfo, timeIsDate = false;
   if (timeCol >= 0) {
     t = rows.map((r) => toTime(r[timeCol]));
@@ -71,54 +63,107 @@ export function tableToDataset(header, rows, name, kind) {
       sampleInfo = `From "${header[timeCol]}" column` + (timeIsDate ? ` (relative to ${new Date(t0 * 1000).toISOString()})` : '');
     }
   } else { t = rows.map((_, i) => i); sampleInfo = 'Row index (no time column)'; }
+  inds.splice(0, inds.length, ...inds.filter((i) => i !== timeCol));
+  const units = inds.map((i) => splitUnits(header[i])[1]), names = inds.map((i) => splitUnits(header[i])[0]);
+  const data = inds.map((i) => Float64Array.from(rows, (r) => toNumber(r[i])));
+  return { name, kind, names, t: Float64Array.from(t), data, units, sampleInfo };
+}
+function splitUnits(h) { const m = h.match(/^(.*?)\s*[[(]([^\])]{1,12})[\])]\s*$/); return m ? [m[1], m[2]] : [h, '']; }
+function detectColumns(header, sample) {
+  const numericRatio = (i) => {
+    let ok = 0, n = 0;
+    for (const r of sample) { const v = r[i]; if (v === '' || v == null) continue; n++; if (Number.isFinite(toNumber(v))) ok++; }
+    return n ? ok / n : 0;
+  };
+  let timeCol = header.findIndex((h) => TIME_RE.test(h.replace(/\[.*?\]|\(.*?\)/g, '').trim()));
+  if (timeCol < 0) {
+    timeCol = header.findIndex((_, i) => {
+      const vals = sample.map((r) => r[i]).filter((v) => v !== '' && v != null);
+      return vals.length && vals.every((v) => v instanceof Date || (typeof v === 'string' && /\d[-/:]\d/.test(v) && Number.isFinite(toTime(v))));
+    });
+  }
   const inds = header.map((_, i) => i).filter((i) => i !== timeCol && numericRatio(i) >= 0.8);
-  // drop pure row-id columns (id / index / rowid counting 1,2,3…) when other channels exist
-  const isId = (i) => /^(id|index|idx|row|rowid|no|nr|#|sl\.?\s*no)$/i.test(header[i]) && rows.every((r, k) => k === 0 || toNumber(r[i]) - toNumber(rows[k - 1][i]) === 1);
+  const isId = (i) => /^(id|index|idx|row|rowid|no|nr|#|sl\.?\s*no)$/i.test(header[i]) && sample.every((r, k) => k === 0 || toNumber(r[i]) - toNumber(sample[k - 1][i]) >= 1);
   if (inds.some((i) => !isId(i))) for (let k = inds.length - 1; k >= 0; k--) if (isId(inds[k])) inds.splice(k, 1);
-  if (!inds.length) throw Error('No numeric data channels found. Columns: ' + header.join(', '));
-  const units = [], names = inds.map((i) => {
-    const m = header[i].match(/^(.*?)\s*[[(]([^\])]{1,12})[\])]\s*$/);
-    units.push(m ? m[2] : '');
-    return m ? m[1] : header[i];
-  });
-  const data = inds.map((i) => rows.map((r) => toNumber(r[i])));
-  return { name, kind, names, t, data, units, sampleInfo };
+  return { timeCol, inds };
 }
 
 // ---------- delimited text ----------
-export function parseDelimited(text, name, kind = 'Imported CSV') {
-  text = text.replace(/^﻿/, '');
-  let lines = text.split(/\r?\n/);
-  // drop comment/preamble lines (#, //, ;) at the top
-  while (lines.length && (/^\s*(#|\/\/|%)/.test(lines[0]) || !lines[0].trim())) lines.shift();
-  lines = lines.filter((l) => l.trim());
-  const probe = lines.slice(0, 50);
-  const cands = ['\t', ';', ',', '|'];
+const FAST_BYTES = 4e6; // above this size use the byte-level numeric parser
+export async function parseDelimited(input, name, kind = 'Imported CSV', progress) {
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  // split the head of the file into lines with their byte offsets
+  const headLen = Math.min(bytes.length, 512 * 1024), dec = new TextDecoder();
+  const lines = []; let st = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  for (let i = st; i < headLen; i++) if (bytes[i] === 10) { lines.push({ off: st, s: dec.decode(bytes.subarray(st, i)).replace(/\r$/, '') }); st = i + 1; if (lines.length > 400) break; }
+  if (lines.length <= 400 && st < headLen) lines.push({ off: st, s: dec.decode(bytes.subarray(st, headLen)).replace(/\r$/, '') });
+  // preamble: comments, blank lines and "key: value" metadata lines before the table
+  let k = 0; const meta = [];
+  const isNumRow = (l) => l.trim().split(/[\s,;|\t]+/).filter(Boolean).every((c) => Number.isFinite(toNumber(c)));
+  while (k < lines.length && (!lines[k].s.trim() || /^\s*(#|\/\/|%|;)/.test(lines[k].s))) meta.push(lines[k++].s);
+  let eoh = -1; lines.forEach((l, i) => { if (/^\*\*\*End_of_Header\*\*\*/.test(l.s)) eoh = i; }); // LabVIEW LVM
+  if (eoh >= 0) { for (let i = k; i <= eoh; i++) meta.push(lines[i].s); k = eoh + 1; }
+  const body = lines.slice(k).filter((l) => l.s.trim() && !/^\s*(#|\/\/|%)/.test(l.s));
+  const probe = body.slice(0, 60).map((l) => l.s);
   let delim = null, best = 0;
-  for (const d of cands) {
-    const counts = probe.map((l) => splitLine(l, d).length);
-    const c = counts[Math.min(1, counts.length - 1)];
-    const consistent = counts.filter((x) => x === c).length / counts.length;
-    const score = c * consistent * (counts[0] === c ? 1 : 0.25);
+  for (const d of ['\t', ';', ',', '|']) {
+    const counts = probe.slice(-40).map((l) => splitLine(l, d).length);
+    const c = counts[Math.floor(counts.length / 2)] || 0;
+    const consistent = counts.filter((x) => x === c).length / (counts.length || 1);
+    // a header line among the first lines must split into the same number of fields
+    const hdr = probe.slice(0, 12).filter((l) => !isNumRow(l));
+    const score = c * consistent * (!hdr.length || hdr.some((l) => splitLine(l, d).length === c) ? 1 : 0.2);
     if (c > 1 && consistent >= 0.8 && score > best) { best = score; delim = d; }
   }
   const split = delim ? (l) => splitLine(l, delim) : (l) => l.trim().split(/\s+/);
-  let rows = lines.map(split);
-  // header detection: first row mostly non-numeric
-  const first = rows[0];
+  // table start: first line whose field count matches the data rows (skips "key: value" preambles)
+  const dataCount = split(probe[probe.length - 1] || '').length;
+  let h = 0;
+  while (h < body.length - 2 && (split(body[h].s).length !== dataCount || (!isNumRow(body[h].s) && split(body[h + 1].s).length !== dataCount))) { meta.push(body[h].s); h++; }
+  const first = split(body[h].s);
   const isHeader = first.filter((c) => !Number.isFinite(toNumber(c))).length >= first.length / 2;
-  let header = isHeader ? first : first.map((_, i) => (i === 0 ? 'Time' : `Channel ${i}`));
-  if (isHeader) rows = rows.slice(1);
-  // optional units row right below header
-  if (rows.length && rows[0].every((c) => !c || (!Number.isFinite(toNumber(c)) && c.length <= 12)) && rows[0].some((c) => c)) {
-    const u = rows.shift();
-    header = header.map((h, i) => (u[i] ? `${h} [${u[i].replace(/[[\]()]/g, '')}]` : h));
+  let header = isHeader ? first : first.map((_, i) => `Channel ${i + 1}`);
+  let dataLine = isHeader ? h + 1 : h;
+  const u = body[dataLine] && split(body[dataLine].s);
+  if (isHeader && u && u.every((c) => !c || (!Number.isFinite(toNumber(c)) && c.length <= 12)) && u.some((c) => c) && !u.some((c) => /\d[-/:]\d/.test(c))) {
+    header = header.map((x, i) => (u[i] ? `${x} [${u[i].replace(/[[\]()]/g, '')}]` : x)); dataLine++;
   }
-  if (!isHeader) {
-    const mono = rows.every((r, i) => i === 0 || toNumber(r[0]) >= toNumber(rows[i - 1][0]));
-    if (!mono) header = first.map((_, i) => `Channel ${i + 1}`);
+  const fsMeta = sampleRateFromMeta(meta);
+  if (!body[dataLine]) throw Error('No data rows found.');
+  if (bytes.length < FAST_BYTES) {
+    const all = dec.decode(bytes.subarray(body[dataLine].off)).split(/\r?\n/).filter((l) => l.trim()).map(split);
+    if (!isHeader && all.length > 1 && all.every((r, i) => i === 0 || toNumber(r[0]) > toNumber(all[i - 1][0]))) header = header.map((x, i) => (i === 0 ? 'Time' : `Channel ${i}`));
+    const d = tableToDataset(header, all, name, kind);
+    return applyMetaRate(d, fsMeta);
   }
-  return tableToDataset(header, rows, name, kind);
+  // ---- fast path for large files ----
+  const sampleRows = body.slice(dataLine, dataLine + 60).map((l) => split(l.s));
+  if (!isHeader && sampleRows.every((r, i) => i === 0 || toNumber(r[0]) > toNumber(sampleRows[i - 1][0]))) header = header.map((x, i) => (i === 0 ? 'Time' : `Channel ${i}`));
+  const { timeCol, inds } = detectColumns(header, sampleRows);
+  const decComma = delim !== ',' && sampleRows.some((r) => r.some((c) => /^-?\d+,\d+$/.test(c)));
+  const delimCode = delim ? delim.charCodeAt(0) : -1;
+  const slowCell = (col, b, s, e) => { const txt = dec.decode(b.subarray(s, e)).replace(/^"|"$/g, ''); return col === timeCol ? toTime(txt) : toNumber(txt); };
+  const cols = await parseNumericTable(bytes, body[dataLine].off, header.length, delimCode, decComma, slowCell, progress);
+  let t, info;
+  if (timeCol >= 0) {
+    t = cols[timeCol]; const t0 = t[0] > 1e8 ? t[0] : 0;
+    if (t0) for (let i = 0; i < t.length; i++) t[i] = Math.round((t[i] - t0) * 1e6) / 1e6;
+    info = `From "${header[timeCol]}" column` + (t0 ? ` (relative to ${new Date(t0 * 1000).toISOString()})` : '');
+  } else { t = new Float64Array(cols[0].length); for (let i = 0; i < t.length; i++) t[i] = i; info = 'Row index (no time column)'; }
+  return applyMetaRate({ name, kind, names: inds.map((i) => splitUnits(header[i])[0]), units: inds.map((i) => splitUnits(header[i])[1]), t, data: inds.map((i) => cols[i]), sampleInfo: info }, fsMeta);
+}
+function sampleRateFromMeta(meta) {
+  for (const l of meta) {
+    let m = l.match(/(sample|sampling|scan)\s*rate[^\d]*([\d.]+)\s*(k|m)?\s*(hz|s\/s|sps)?/i);
+    if (m) return Number(m[2]) * (/k/i.test(m[3] || '') ? 1e3 : /m/i.test(m[3] || '') ? 1e6 : 1);
+    m = l.match(/(delta[\s_]*t|dt|sample\s*interval|increment)\s*[:=,;\t]\s*([\d.eE+-]+)/i);
+    if (m && Number(m[2]) > 0) return 1 / Number(m[2]);
+  }
+  return 0;
+}
+function applyMetaRate(d, fs) {
+  if (fs > 0 && /Row index/.test(d.sampleInfo)) { for (let i = 0; i < d.t.length; i++) d.t[i] = i / fs; d.sampleInfo = `Sample rate ${fmtRate(fs)} from file header`; }
+  return d;
 }
 function splitLine(s, d) {
   const out = []; let cur = '', q = false;
@@ -156,34 +201,34 @@ async function parseExcel(buf, name) {
 }
 
 // ---------- TDMS ----------
-async function parseTdms(buf, name) {
-  const chans = [...parseTdmsChannels(buf).values()].filter((c) => c.name && c.data && c.data.length && c.type !== 0x20);
-  if (!chans.length) throw Error('TDMS file contains no numeric channels.');
-  const groups = [...new Set(chans.map((c) => c.group))];
-  const group = await choose('Select TDMS group', groups, name);
-  const gc = chans.filter((c) => c.group === group);
-  const timeCh = gc.find((c) => c.type === 0x44 || TIME_RE.test(c.name));
-  const sig = gc.filter((c) => c !== timeCh);
+async function parseTdms(buf, name, progress) {
+  const { channels } = await readTdms(buf, progress);
+  if (!channels.length) throw Error('TDMS file contains no numeric channels.');
+  const groups = [...new Set(channels.map((c) => c.group))];
+  const labels = groups.map((g) => { const cs = channels.filter((c) => c.group === g); return `${g}  (${cs.length} ch × ${Math.max(...cs.map((c) => c.data.length)).toLocaleString()} samples)`; });
+  const group = groups[labels.indexOf(await choose('Select TDMS group', labels, name))];
+  const gc = channels.filter((c) => c.group === group);
+  const timeCh = gc.find((c) => c.isTime || TIME_RE.test(c.name.replace(/\[.*?\]|\(.*?\)/g, '').trim()));
+  let sig = gc.filter((c) => c !== timeCh);
   if (!sig.length) throw Error('Group has no data channels.');
   const n = Math.max(...sig.map((c) => c.data.length));
   let t, info;
   if (timeCh) {
-    const t0 = timeCh.data[0] > 1e8 ? timeCh.data[0] : 0;
-    t = Array.from({ length: n }, (_, i) => (i < timeCh.data.length ? timeCh.data[i] - t0 : NaN));
+    t = new Float64Array(n); const t0 = timeCh.data[0] > 1e8 ? timeCh.data[0] : 0;
+    for (let i = 0; i < n; i++) t[i] = i < timeCh.data.length ? timeCh.data[i] - t0 : NaN;
     info = `From TDMS channel "${timeCh.name}"`;
   } else {
-    const ref = sig.find((c) => c['prop:wf_increment']);
-    const dt = ref ? Number(ref['prop:wf_increment']) : 0;
-    const x0 = ref ? Number(ref['prop:wf_start_offset'] || 0) : 0;
-    t = Array.from({ length: n }, (_, i) => (dt ? x0 + i * dt : i));
-    info = dt ? `Waveform timing wf_increment = ${dt} s` : 'Sample index (no timing info)';
+    const ref = sig.find((c) => c.props.wf_increment);
+    const dt = ref ? Number(ref.props.wf_increment) : 0, x0 = ref ? Number(ref.props.wf_start_offset || 0) : 0;
+    t = new Float64Array(n); for (let i = 0; i < n; i++) t[i] = dt ? x0 + i * dt : i;
+    info = dt ? `Waveform timing ${fmtRate(1 / dt)} (wf_increment ${dt} s)` : 'Sample index (no timing info)';
+    if (ref && typeof ref.props.wf_start_time === 'number' && ref.props.wf_start_time > 0) info += ` · start ${new Date(ref.props.wf_start_time * 1000).toISOString()}`;
   }
+  const pad = (d) => { if (d.length === n) return d; const o = new Float64Array(n).fill(NaN); o.set(d); return o; };
   return {
-    name: `${name} › ${group}`, kind: 'TDMS',
-    names: sig.map((c) => c.name),
-    units: sig.map((c) => String(c['prop:unit_string'] || c['prop:NI_UnitDescription'] || '')),
-    t, data: sig.map((c) => Array.from({ length: n }, (_, i) => (i < c.data.length ? Number(c.data[i]) : NaN))),
-    sampleInfo: info,
+    name: `${name} › ${group}`, kind: 'TDMS', names: sig.map((c) => c.name),
+    units: sig.map((c) => String(c.props.unit_string || c.props.NI_UnitDescription || '')),
+    t, data: sig.map((c) => pad(c.data)), sampleInfo: info,
   };
 }
 
@@ -259,29 +304,33 @@ function parseJson(text, name) {
 }
 
 // ---------- dispatcher ----------
-export async function importFile(file) {
+export async function importFile(file, progress) {
   const name = file.name, ext = (name.split('.').pop() || '').toLowerCase();
+  if (progress) await progress(0, 'Reading file');
   const buf = await file.arrayBuffer();
+  const prog = progress && ((f) => progress(f, 'Parsing'));
   const head = new Uint8Array(buf, 0, Math.min(16, buf.byteLength));
   const magic = String.fromCharCode(...head);
-  if (magic.startsWith('TDSm')) return parseTdms(buf, name);
+  if (magic.startsWith('TDSm')) return parseTdms(buf, name, prog);
   if (magic.startsWith('SQLite format 3')) return parseSqliteFile(buf, name);
   if (head[0] === 0 && head[1] === 1 && head[2] === 0 && head[3] === 0 && /Standard (Jet|ACE) DB/.test(String.fromCharCode(...new Uint8Array(buf, 4, 16)))) return parseAccess(buf, name);
   if (magic.startsWith('PK') || (head[0] === 0xd0 && head[1] === 0xcf)) return parseExcel(buf, name);
-  const text = new TextDecoder().decode(buf);
+  const bytes = new Uint8Array(buf);
+  const text = () => new TextDecoder().decode(bytes);
+  const start = new TextDecoder().decode(bytes.subarray(0, 2000));
   switch (ext) {
-    case 'tdms': return parseTdms(buf, name);
+    case 'tdms': return parseTdms(buf, name, prog);
     case 'mdb': case 'accdb': return parseAccess(buf, name);
     case 'db': case 'sqlite': case 'sqlite3': case 'db3': return parseSqliteFile(buf, name);
     case 'xlsx': case 'xlsm': case 'xlsb': case 'xls': case 'ods': return parseExcel(buf, name);
-    case 'sql': return parseSqlDump(text, name);
-    case 'json': return parseJson(text, name);
-    case 'txt': case 'dat': case 'log': return parseDelimited(text, name, 'Text');
+    case 'sql': return parseSqlDump(text(), name);
+    case 'json': return parseJson(text(), name);
+    case 'txt': case 'dat': case 'log': case 'lvm': return parseDelimited(bytes, name, ext === 'lvm' ? 'LabVIEW LVM' : 'Text', prog);
     default:
-      if (/^\s*[[{]/.test(text)) return parseJson(text, name);
-      if (/^\s*(create|insert|--|begin)/i.test(text)) return parseSqlDump(text, name);
-      if (/<table|<\?xml|<html/i.test(text.slice(0, 2000))) return parseExcel(buf, name); // HTML/XML spreadsheet
-      return parseDelimited(text, name, ext === 'tsv' ? 'TSV' : 'Imported CSV');
+      if (/^\s*[[{]/.test(start)) return parseJson(text(), name);
+      if (/^\s*(create|insert|--|begin)/i.test(start)) return parseSqlDump(text(), name);
+      if (/<table|<\?xml|<html/i.test(start)) return parseExcel(buf, name);
+      return parseDelimited(bytes, name, ext === 'tsv' ? 'TSV' : 'Imported CSV', prog);
   }
 }
 
@@ -309,14 +358,14 @@ function choose(title, options, fileName, allowQuery = false) {
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// ---------- wire into the analyzer (capture phase → original handler not run) ----------
+// ---------- wire into the analyzer (capture phase → original CSV handler not run) ----------
 function install() {
   const input = document.getElementById('fileInput');
   if (!input) return;
   input.setAttribute('accept', ACCEPT);
   const lbl = input.closest('label');
   if (lbl) for (const n of lbl.childNodes) if (n.nodeType === 3 && /Open CSV/.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace('Open CSV', 'Open Data');
-  if (lbl) lbl.title = 'Excel, CSV, TXT, TDMS, MS Access, SQLite, SQL, JSON';
+  if (lbl) lbl.title = 'Excel, CSV, TXT, LVM, TDMS, MS Access, SQLite, SQL, JSON';
   input.addEventListener('change', async (e) => {
     e.stopImmediatePropagation();
     const f = e.target.files[0];
@@ -324,22 +373,41 @@ function install() {
     await loadFile(f);
     e.target.value = '';
   }, true);
-  // drag & drop anywhere
   addEventListener('dragover', (e) => e.preventDefault());
-  addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+  addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && !(input.disabled)) loadFile(f); });
+  installBar(api);
+  // the reference "Reset Demo" / demo loaders call loadData directly → drop the big-data record
+  const orig = window.loadData;
+  window.loadData = function (d) { if (!d || !d.__view) { state.full = null; refreshBar(api); } return orig.apply(this, arguments); };
 }
 async function loadFile(f) {
   const badge = document.getElementById('fileBadge');
   const prev = badge && badge.textContent;
-  if (badge) badge.textContent = '● LOADING ' + f.name.toUpperCase() + '…';
+  const t0 = performance.now();
   try {
-    const d = await importFile(f);
-    window.loadData(d);
+    const full = compactFull(await importFile(f, (frac, what) => { setProgress(`${what || 'Parsing'} ${f.name} · ${Math.round(frac * 100)}%`); if (badge) badge.textContent = `● LOADING ${Math.round(frac * 100)}%`; return new Promise((r) => setTimeout(r)); }));
+    full.loadMs = performance.now() - t0; full.bytes = f.size;
+    state.full = full; state.a = 0; state.b = full.t.length;
+    showView(true);
     if (typeof window.navigate === 'function') window.navigate('overview');
   } catch (err) {
     if (badge) badge.textContent = prev;
     if (!err.cancelled) alert('Unable to import ' + f.name + ': ' + err.message);
-  }
+  } finally { setProgress(''); }
 }
-window.AnalyzerImport = { importFile, parseDelimited, tableToDataset, loadFile, accept: ACCEPT };
+function showView(resetSelection) {
+  const full = state.full; if (!full) return;
+  const v = makeView(full, state.a, state.b); v.__view = true;
+  let keep = null;
+  try { if (!resetSelection) keep = new Set(selected); } catch {}
+  window.loadData(v);
+  if (keep) try { selected = keep; renderAll(); } catch {}
+  const badge = document.getElementById('fileBadge');
+  if (badge) badge.textContent = `● ${full.kind.toUpperCase()} · ${full.names.length} CH · ${full.t.length.toLocaleString()} SAMPLES`;
+  refreshBar(api);
+}
+function setWindow(t1, t2) { const [a, b] = windowByTime(state.full, t1, t2); state.a = a; state.b = b; showView(false); }
+function setRate(fs) { const t = state.full.t; for (let i = 0; i < t.length; i++) t[i] = i / fs; state.full.sampleInfo = `Sample rate ${fmtRate(fs)} (user set)`; showView(false); }
+const api = { state, showView, setWindow, setRate, fullStats, rateInfo, fmtTime, fmtRate, exportWindowCsv };
+window.AnalyzerImport = { importFile, parseDelimited, tableToDataset, loadFile, accept: ACCEPT, state, api };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install); else install();
