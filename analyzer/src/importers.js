@@ -12,6 +12,7 @@ import { readTdms } from './tdms.js';
 import { parseNumericTable } from './fastcsv.js';
 import { state, compactFull, makeView, fullStats, rateInfo, fmtRate, fmtTime, windowByTime, exportWindowCsv } from './bigdata.js';
 import { installBar, refreshBar, setProgress } from './ui.js';
+import { installResponsive } from './responsive.js';
 
 const TIME_RE = /^(time|time[ _]?\(?s\)?|time_s|timestamp|datetime|date[ _]?time|date|seconds|sec|t|zeit|elapsed|elapsed[ _]?time|time[ _]?stamp)$/i;
 const ACCEPT = '.csv,.tsv,.txt,.dat,.log,.lvm,.xlsx,.xlsm,.xlsb,.xls,.ods,.tdms,.mdb,.accdb,.db,.sqlite,.sqlite3,.db3,.sql,.json';
@@ -376,6 +377,8 @@ function install() {
   addEventListener('dragover', (e) => e.preventDefault());
   addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && !(input.disabled)) loadFile(f); });
   installBar(api);
+  installResponsive();
+  if (matchMedia('(max-width:860px)').matches) { const b = document.getElementById('bdBar'); b?.querySelector('[data-tog]')?.click(); }
   // the reference "Reset Demo" / demo loaders call loadData directly → drop the big-data record
   const orig = window.loadData;
   window.loadData = function (d) { if (!d || !d.__view) { state.full = null; refreshBar(api); } return orig.apply(this, arguments); };

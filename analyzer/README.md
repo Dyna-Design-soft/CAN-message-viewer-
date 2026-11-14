@@ -21,6 +21,13 @@ Units are read from headers like `Pressure [bar]` or `Speed (rpm)`.
 
 Sample rate is also read from header lines such as `Sample Rate: 20 kHz` or `dt = 5e-5`, and can be set by hand in the data bar.
 
+## Mobile & tablet
+
+Responsive on phones (≥320 px), tablets and desktops: on narrow screens the sidebar becomes a slide-in menu
+(☰ button or swipe from the left edge), a sticky app bar shows the page title and an **＋ Open** button,
+wide tables scroll inside their cards, grids stack, touch targets are enlarged, and the Full Record bar
+becomes a collapsible bottom sheet. Implemented as an additive layer (`src/responsive.js`); the reference markup is untouched.
+
 ## Large DAQ records (e.g. 20 kS/s × many channels × minutes)
 
 - Large text files are parsed straight from bytes into typed arrays (≈1.2 M rows × 5 columns in ~0.3 s);
