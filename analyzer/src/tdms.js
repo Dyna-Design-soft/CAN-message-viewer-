@@ -4,6 +4,7 @@
 // NI_Scale linear / polynomial scaling, waveform timing properties.
 const T = { 1: [1, 'Int8'], 2: [2, 'Int16'], 3: [4, 'Int32'], 4: [8, 'BigInt64'], 5: [1, 'Uint8'], 6: [2, 'Uint16'], 7: [4, 'Uint32'], 8: [8, 'BigUint64'], 9: [4, 'Float32'], 10: [8, 'Float64'], 0x19: [4, 'Float32'], 0x1a: [8, 'Float64'], 0x21: [1, 'Uint8'], 0x44: [16, 'ts'] };
 const NI_EPOCH = 2082844800;
+const DAQMX_TYPE = { 0: 'Uint8', 1: 'Int8', 2: 'Uint16', 3: 'Int16', 4: 'Uint32', 5: 'Int32', 6: 'BigUint64', 7: 'BigInt64', 8: 'Float32', 9: 'Float64' };
 const DAQMX_A = 0x69120000, DAQMX_B = 0x69130000;
 
 export async function readTdms(buf, progress) {
@@ -63,16 +64,18 @@ export async function readTdms(buf, progress) {
     const active = list.filter((o) => o.idx && o.idx.n > 0);
     if (!active.length) return;
     if (active[0].idx.daqmx) {
-      // DAQmx: all channels share one raw buffer of width = widths[0]; each scaler reads at offset
-      const width = active[0].idx.widths[0];
-      const n = active[0].idx.n;
-      const chunkSize = width * n, chunks = Math.max(1, Math.floor((end - start) / chunkSize));
+      // DAQmx: raw buffers (one per width entry) hold interleaved scans; each scaler reads
+      // its value at (buffer start + byteOffset + i * width). Scaler types use DAQmx codes.
+      const widths = active[0].idx.widths, n = active[0].idx.n;
+      const bufStart = []; let acc = 0; for (const w of widths) { bufStart.push(acc); acc += w * n; }
+      const chunkSize = acc, chunks = Math.max(1, Math.floor((end - start) / chunkSize));
       for (let c = 0; c < chunks; c++) {
         const base = start + c * chunkSize;
         for (const o of active) {
-          const sc = o.idx.scalers[0], [sz, k] = T[sc.type] || T[ sc.type === 0 ? 2 : sc.type ] || [2, 'Int16'];
-          const out = new Float64Array(n), get = dv['get' + (k.startsWith('Big') ? 'Float64' : k)].bind(dv);
-          for (let i = 0, q = base + sc.off; i < n; i++, q += width) out[i] = get(q, le);
+          const sc = o.idx.scalers[0], k = DAQMX_TYPE[sc.type] || 'Int16', width = widths[sc.buf] || widths[0];
+          const out = new Float64Array(n), at = base + (bufStart[sc.buf] || 0) + sc.off;
+          if (k.startsWith('Big')) for (let i = 0, q = at; i < n; i++, q += width) out[i] = Number(dv['get' + k](q, le));
+          else { const get = dv['get' + k].bind(dv); for (let i = 0, q = at; i < n; i++, q += width) out[i] = get(q, le); }
           o.chunks.push(out); o.n += n; o.daqmx = true;
         }
       }

@@ -21,6 +21,38 @@ Units are read from headers like `Pressure [bar]` or `Speed (rpm)`.
 
 Sample rate is also read from header lines such as `Sample Rate: 20 kHz` or `dt = 5e-5`, and can be set by hand in the data bar.
 
+## Two modes: OFFLINE and LIVE
+
+Use the **OFFLINE | LIVE** switch in the header (or in the mobile app bar).
+
+* **OFFLINE**: open and analyze files (everything described above).
+* **LIVE**: stream from a Python, LabVIEW or any other application. The **Live Monitor** page has real-time
+  strip charts (min/max per pixel, so nothing is hidden at 20–50 kS/s), live value tiles, throughput, buffer and drop
+  counters, pause, **Record**, then **Analyze recording** / **Save CSV**, plus **Analyze current buffer**.
+  *Auto-refresh analysis pages* feeds the live window into Trends, Statistics, FFT, Thresholds… every 2 s.
+  A built-in simulator lets you try it without hardware.
+
+Browsers can only open WebSocket connections, so TCP/UDP producers go through the bundled bridge
+(`python/ia_bridge.py`, standard library only):
+
+```
+python python/ia_bridge.py            # WS :8765 (browser)  TCP :8766  UDP :8767 (producers)
+python python/ia_live.py --demo       # demo producer: 8 ch @ 20 kS/s over TCP
+```
+
+| Transport | Use it for |
+|---|---|
+| TCP :8766 | Recommended: reliable, ordered, works from LabVIEW / Python / C# / PLCs |
+| UDP :8767 | Lowest latency; each datagram = one message; may drop under load |
+| WebSocket :8765 | Producers that already speak WebSocket; the browser connects here too |
+
+Messages: JSON lines (`{"type":"meta","names":[…],"units":[…],"rate":20000}`, `{"dt":5e-5,"ch":[[…],[…]]}`,
+`{"t":1.2,"v":[…]}`, `{"t":1.2,"values":{"name":v}}`) or the fast binary block
+`"IAL1" | u32 channels | u32 samples | f64 t0 | f64 dt | float32 data channel by channel` (little-endian).
+Python: `python/ia_live.py` (`LiveSender`). LabVIEW: see `python/LABVIEW.md`.
+
+Tested: 16 channels × 50 kS/s (800,000 values/s) over TCP with no drops, at a steady 60 fps.
+
 ## Mobile & tablet
 
 Responsive on phones (≥320 px), tablets and desktops: on narrow screens the sidebar becomes a slide-in menu

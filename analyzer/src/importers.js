@@ -13,7 +13,9 @@ import { parseNumericTable } from './fastcsv.js';
 import { state, compactFull, makeView, fullStats, rateInfo, fmtRate, fmtTime, windowByTime, exportWindowCsv } from './bigdata.js';
 import { installBar, refreshBar, setProgress } from './ui.js';
 import { installResponsive } from './responsive.js';
+import { installLive } from './live.js';
 
+const MISSING = /^[-+]?(nan|n\/a|na|null|none|inf(inity)?|-)$/i;
 const TIME_RE = /^(time|time[ _]?\(?s\)?|time_s|timestamp|datetime|date[ _]?time|date|seconds|sec|t|zeit|elapsed|elapsed[ _]?time|time[ _]?stamp)$/i;
 const ACCEPT = '.csv,.tsv,.txt,.dat,.log,.lvm,.xlsx,.xlsm,.xlsb,.xls,.ods,.tdms,.mdb,.accdb,.db,.sqlite,.sqlite3,.db3,.sql,.json';
 
@@ -29,6 +31,7 @@ function toNumber(v) {
   if (/^-?\d{1,3}(\.\d{3})*,\d+$/.test(s)) s = s.replace(/\./g, '').replace(',', '.'); // 1.234,5
   else if (/^-?\d+,\d+$/.test(s)) s = s.replace(',', '.'); // decimal comma
   if (/^(true|false)$/i.test(s)) return /^t/i.test(s) ? 1 : 0;
+  if (/^[-+]?(nan|n\/a|na|null|none|inf(inity)?|-)$/i.test(s)) return NaN;
   const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
 }
@@ -65,6 +68,7 @@ export function tableToDataset(header, rows, name, kind) {
     }
   } else { t = rows.map((_, i) => i); sampleInfo = 'Row index (no time column)'; }
   inds.splice(0, inds.length, ...inds.filter((i) => i !== timeCol));
+  if (!inds.length) throw Error('No numeric data channels found. Columns: ' + header.join(', '));
   const units = inds.map((i) => splitUnits(header[i])[1]), names = inds.map((i) => splitUnits(header[i])[0]);
   const data = inds.map((i) => Float64Array.from(rows, (r) => toNumber(r[i])));
   return { name, kind, names, t: Float64Array.from(t), data, units, sampleInfo };
@@ -73,7 +77,7 @@ function splitUnits(h) { const m = h.match(/^(.*?)\s*[[(]([^\])]{1,12})[\])]\s*$
 function detectColumns(header, sample) {
   const numericRatio = (i) => {
     let ok = 0, n = 0;
-    for (const r of sample) { const v = r[i]; if (v === '' || v == null) continue; n++; if (Number.isFinite(toNumber(v))) ok++; }
+    for (const r of sample) { const v = r[i]; if (v === '' || v == null || MISSING.test(String(v).trim())) continue; n++; if (Number.isFinite(toNumber(v))) ok++; }
     return n ? ok / n : 0;
   };
   let timeCol = header.findIndex((h) => TIME_RE.test(h.replace(/\[.*?\]|\(.*?\)/g, '').trim()));
@@ -93,6 +97,7 @@ function detectColumns(header, sample) {
 const FAST_BYTES = 4e6; // above this size use the byte-level numeric parser
 export async function parseDelimited(input, name, kind = 'Imported CSV', progress) {
   const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  if (!bytes.length || !/\S/.test(new TextDecoder().decode(bytes.subarray(0, 4096)))) throw Error('The file is empty.');
   // split the head of the file into lines with their byte offsets
   const headLen = Math.min(bytes.length, 512 * 1024), dec = new TextDecoder();
   const lines = []; let st = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
@@ -121,6 +126,7 @@ export async function parseDelimited(input, name, kind = 'Imported CSV', progres
   const dataCount = split(probe[probe.length - 1] || '').length;
   let h = 0;
   while (h < body.length - 2 && (split(body[h].s).length !== dataCount || (!isNumRow(body[h].s) && split(body[h + 1].s).length !== dataCount))) { meta.push(body[h].s); h++; }
+  if (!body.length) throw Error('No data rows found.');
   const first = split(body[h].s);
   const isHeader = first.filter((c) => !Number.isFinite(toNumber(c))).length >= first.length / 2;
   let header = isHeader ? first : first.map((_, i) => `Channel ${i + 1}`);
@@ -144,6 +150,7 @@ export async function parseDelimited(input, name, kind = 'Imported CSV', progres
   const decComma = delim !== ',' && sampleRows.some((r) => r.some((c) => /^-?\d+,\d+$/.test(c)));
   const delimCode = delim ? delim.charCodeAt(0) : -1;
   const slowCell = (col, b, s, e) => { const txt = dec.decode(b.subarray(s, e)).replace(/^"|"$/g, ''); return col === timeCol ? toTime(txt) : toNumber(txt); };
+  if (!inds.length) throw Error('No numeric data channels found. Columns: ' + header.join(', '));
   const cols = await parseNumericTable(bytes, body[dataLine].off, header.length, delimCode, decComma, slowCell, progress);
   let t, info;
   if (timeCol >= 0) {
@@ -378,6 +385,7 @@ function install() {
   addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && !(input.disabled)) loadFile(f); });
   installBar(api);
   installResponsive();
+  installLive(api);
   if (matchMedia('(max-width:860px)').matches) { const b = document.getElementById('bdBar'); b?.querySelector('[data-tog]')?.click(); }
   // the reference "Reset Demo" / demo loaders call loadData directly → drop the big-data record
   const orig = window.loadData;

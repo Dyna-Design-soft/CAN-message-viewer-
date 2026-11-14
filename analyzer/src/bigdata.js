@@ -9,6 +9,29 @@ export function compactFull(full) {
   const total = full.data.reduce((s, a) => s + a.length, 0);
   if (total > 2e7) full.data = full.data.map((a) => (a instanceof Float32Array ? a : Float32Array.from(a)));
   if (!(full.t instanceof Float64Array)) full.t = Float64Array.from(full.t);
+  // time axis must be finite and non-decreasing for windowing / envelopes
+  const t = full.t, n = t.length;
+  let bad = false, unsorted = false;
+  for (let i = 0; i < n; i++) { if (!Number.isFinite(t[i])) { bad = true; break; } if (i && t[i] < t[i - 1]) unsorted = true; }
+  if (bad) { // fill invalid timestamps by linear interpolation / extrapolation of neighbours
+    let last = -1;
+    for (let i = 0; i < n; i++) if (Number.isFinite(t[i])) {
+      if (last < 0) for (let k = 0; k < i; k++) t[k] = t[i] - (i - k) * ((t[Math.min(n - 1, i + 1)] - t[i]) || 1);
+      else for (let k = last + 1; k < i; k++) t[k] = t[last] + ((t[i] - t[last]) * (k - last)) / (i - last);
+      last = i;
+    }
+    if (last < 0) for (let i = 0; i < n; i++) t[i] = i;
+    else { const dt = last > 0 ? (t[last] - t[0]) / last : 1; for (let k = last + 1; k < n; k++) t[k] = t[last] + (k - last) * dt; }
+    full.sampleInfo += ' · invalid timestamps interpolated';
+    unsorted = false; for (let i = 1; i < n; i++) if (t[i] < t[i - 1]) { unsorted = true; break; }
+  }
+  if (unsorted) { // sort all channels by time (stable)
+    const idx = new Uint32Array(n); for (let i = 0; i < n; i++) idx[i] = i;
+    idx.sort((a, b) => t[a] - t[b] || a - b);
+    full.t = Float64Array.from(idx, (i) => t[i]);
+    full.data = full.data.map((d) => { const o = new d.constructor(n); for (let i = 0; i < n; i++) o[i] = d[idx[i]]; return o; });
+    full.sampleInfo += ' · rows sorted by time';
+  }
   return full;
 }
 
@@ -32,7 +55,7 @@ export function makeView(full, a = 0, b = full.t.length, cap = state.cap, mode =
       for (let k = 0; k < buckets; k++) {
         const s = a + Math.floor(k * bw), e = Math.min(b, a + Math.floor((k + 1) * bw));
         let mn = Infinity, mx = -Infinity, imn = s, imx = s;
-        for (let i = s; i < e; i++) { const v = d[i]; if (v < mn) { mn = v; imn = i; } if (v > mx) { mx = v; imx = i; } }
+        for (let i = s; i < e; i++) { const v = d[i]; if (!(v > -Infinity && v < Infinity)) continue; if (v < mn) { mn = v; imn = i; } if (v > mx) { mx = v; imx = i; } }
         if (mn === Infinity) { out[2 * k] = out[2 * k + 1] = NaN; continue; }
         if (imn <= imx) { out[2 * k] = mn; out[2 * k + 1] = mx; } else { out[2 * k] = mx; out[2 * k + 1] = mn; }
       }
